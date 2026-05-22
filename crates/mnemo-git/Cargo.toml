@@ -1,0 +1,10 @@
+[package]
+name = "mnemo-git"
+version = "0.1.0"
+edition = "2021"
+description = "Git diff, refs, and working-tree overlay for Mnemo"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }
+git2 = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,12 @@
+[package]
+name = "mnemo-core"
+version = "0.1.0"
+edition = "2021"
+description = "Domain types, errors, and traits for the Mnemo code intelligence layer"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }

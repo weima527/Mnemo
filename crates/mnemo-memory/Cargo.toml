@@ -1,0 +1,12 @@
+[package]
+name = "mnemo-memory"
+version = "0.1.0"
+edition = "2021"
+description = "Project constitution, user preferences, and outcome memory for Mnemo"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }
+mnemo-store = { path = "../mnemo-store" }
+serde = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }

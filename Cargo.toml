@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mnemo-core",
+    "crates/mnemo-parser",
+    "crates/mnemo-store",
+    "crates/mnemo-graph",
+    "crates/mnemo-git",
+    "crates/mnemo-index",
+    "crates/mnemo-mcp",
+    "crates/mnemo-memory",
+    "crates/mnemo-cli",
+]
+
+[workspace.dependencies]
+# Async runtime (only for MCP transport / filesystem watching)
+tokio = { version = "1", features = ["full"] }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Error handling
+thiserror = "2"
+anyhow = "1"
+# Structured logging / spans
+tracing = "0.1"
+tracing-subscriber = "0.3"
+# Embedded SQLite
+rusqlite = { version = "0.32", features = ["bundled"] }
+# Tree-sitter
+tree-sitter = "0.24"
+# Git bindings
+git2 = "0.19"
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+# Content hashing
+blake3 = "1"
+# MCP protocol (Rust)
+rmcp = { version = "0.7", features = ["server"] }
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+# Directory walking
+walkdir = "2"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

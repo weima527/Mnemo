@@ -1,0 +1,16 @@
+[package]
+name = "mnemo-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Local CLI for debugging and benchmarking the Mnemo intelligence layer"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }
+mnemo-index = { path = "../mnemo-index" }
+mnemo-parser = { path = "../mnemo-parser" }
+mnemo-store = { path = "../mnemo-store" }
+mnemo-graph = { path = "../mnemo-graph" }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }

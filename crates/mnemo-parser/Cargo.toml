@@ -1,0 +1,10 @@
+[package]
+name = "mnemo-parser"
+version = "0.1.0"
+edition = "2021"
+description = "Tree-sitter adapters and symbol extraction for Mnemo"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }
+tree-sitter = { workspace = true }
+tracing = { workspace = true }

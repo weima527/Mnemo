@@ -1,0 +1,10 @@
+[package]
+name = "mnemo-graph"
+version = "0.1.0"
+edition = "2021"
+description = "Symbol graph, dependency edges, and traversal for Mnemo"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }
+serde = { workspace = true }
+tracing = { workspace = true }

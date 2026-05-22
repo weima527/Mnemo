@@ -1,0 +1,17 @@
+# Rust build artifacts
+/target/
+
+# Env / secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Editor / tool droppings
+*.rs.bk
+/.deepseek/
+
+# Common heavy directories (indexed repos land here during dev)
+/test-repos/
+/tmp/
