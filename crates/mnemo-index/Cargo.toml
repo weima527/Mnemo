@@ -2,6 +2,7 @@
 name = "mnemo-index"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 description = "Repository indexing and incremental update engine for Mnemo"
 
 [dependencies]

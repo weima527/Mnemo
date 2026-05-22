@@ -1,5 +1,7 @@
 [workspace]
 resolver = "2"
+license = "Apache-2.0"
+repository = "https://github.com/mnemo/mnemo"
 members = [
     "crates/mnemo-core",
     "crates/mnemo-parser",
