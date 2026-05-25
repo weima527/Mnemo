@@ -46,6 +46,8 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 # Directory walking
 walkdir = "2"
+# Home directory resolution
+dirs = "5"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
