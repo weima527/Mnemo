@@ -4,7 +4,7 @@
 //! through edges (calls, imports, contains, implements, file-depends)
 //! and supports bounded traversal for context planning and impact analysis.
 
-use mnemo_core::{Edge, EdgeKind, FileId, SnapshotId, Symbol, SymbolId};
+use mnemo_core::{Edge, EdgeKind, FileIdentityId, SnapshotId, Symbol, SymbolIdentityId};
 
 /// An in-memory working view of the code graph for a snapshot.
 ///
@@ -36,12 +36,12 @@ impl SymbolGraph {
     }
 
     /// Find a symbol by its id.
-    pub fn find_symbol(&self, id: SymbolId) -> Option<&Symbol> {
-        self.symbols.iter().find(|s| s.id == id)
+    pub fn find_symbol(&self, id: SymbolIdentityId) -> Option<&Symbol> {
+        self.symbols.iter().find(|s| s.identity_id == id)
     }
 
     /// Find all symbols in a given file.
-    pub fn symbols_in_file(&self, file_id: FileId) -> Vec<&Symbol> {
+    pub fn symbols_in_file(&self, file_id: FileIdentityId) -> Vec<&Symbol> {
         self.symbols
             .iter()
             .filter(|s| s.file_id == file_id)
@@ -49,7 +49,7 @@ impl SymbolGraph {
     }
 
     /// Return all callers of a symbol (incoming Calls edges).
-    pub fn callers_of(&self, target: SymbolId) -> Vec<&Symbol> {
+    pub fn callers_of(&self, target: SymbolIdentityId) -> Vec<&Symbol> {
         self.edges
             .iter()
             .filter(|e| e.kind == EdgeKind::Calls && e.to == target)
@@ -58,7 +58,7 @@ impl SymbolGraph {
     }
 
     /// Return all callees of a symbol (outgoing Calls edges).
-    pub fn callees_of(&self, source: SymbolId) -> Vec<&Symbol> {
+    pub fn callees_of(&self, source: SymbolIdentityId) -> Vec<&Symbol> {
         self.edges
             .iter()
             .filter(|e| e.kind == EdgeKind::Calls && e.from == source)
@@ -85,15 +85,20 @@ impl SymbolGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mnemo_core::{Language, Range};
+    use mnemo_core::{Language, ProjectId, Range, SymbolIdentityId, SymbolVersionId};
+    use std::path::Path;
 
-    fn make_symbol(id: SymbolId, name: &str) -> Symbol {
+    fn make_symbol(id: SymbolIdentityId, name: &str) -> Symbol {
         Symbol {
-            id,
+            identity_id: id,
+            version_id: SymbolVersionId::derive(
+                id,
+                &blake3::hash(name.as_bytes()),
+            ),
             name: name.to_string(),
             qualified_name: None,
             kind: mnemo_core::SymbolKind::Function,
-            file_id: FileId::new_v4(),
+            file_id: FileIdentityId::ZERO,
             definition_range: Range {
                 start_byte: 0,
                 end_byte: 10,
@@ -109,7 +114,8 @@ mod tests {
     #[test]
     fn add_and_find_symbol() {
         let mut g = SymbolGraph::new();
-        let id = SymbolId::new_v4();
+        let proj = ProjectId::from_canonical_path(Path::new("/tmp/test"));
+        let id = SymbolIdentityId::derive(proj, "src/lib.rs", "main", mnemo_core::SymbolKind::Function);
         let sym = make_symbol(id, "main");
         g.add_symbol(sym.clone());
         assert_eq!(g.find_symbol(id).unwrap().name, "main");
@@ -118,8 +124,9 @@ mod tests {
     #[test]
     fn caller_callee_traversal() {
         let mut g = SymbolGraph::new();
-        let a = SymbolId::new_v4();
-        let b = SymbolId::new_v4();
+        let proj = ProjectId::from_canonical_path(Path::new("/tmp/test"));
+        let a = SymbolIdentityId::derive(proj, "a.rs", "foo", mnemo_core::SymbolKind::Function);
+        let b = SymbolIdentityId::derive(proj, "b.rs", "bar", mnemo_core::SymbolKind::Function);
 
         g.add_symbol(make_symbol(a, "foo"));
         g.add_symbol(make_symbol(b, "bar"));

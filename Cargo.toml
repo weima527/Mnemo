@@ -36,6 +36,8 @@ git2 = "0.19"
 uuid = { version = "1", features = ["v4"] }
 # Content hashing
 blake3 = "1"
+# Hex encoding for ID display
+hex = "0.4"
 # MCP protocol (Rust)
 rmcp = { version = "0.7", features = ["server"] }
 # Timestamps

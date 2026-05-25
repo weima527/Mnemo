@@ -3,21 +3,8 @@
 //! These types form the vocabulary used across all crates:
 //! symbols, files, edges, snapshots, overlays, etc.
 
+use crate::ids::{FileIdentityId, ProjectId, SnapshotId, SymbolIdentityId, SymbolVersionId};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-// ---------------------------------------------------------------------------
-// Identifiers
-// ---------------------------------------------------------------------------
-
-/// Unique identifier for a file within a repository index.
-pub type FileId = Uuid;
-
-/// Unique identifier for a symbol (function, struct, module, etc.).
-pub type SymbolId = Uuid;
-
-/// Unique identifier for a snapshot (immutable point-in-time graph view).
-pub type SnapshotId = Uuid;
 
 // ---------------------------------------------------------------------------
 // Language
@@ -80,7 +67,7 @@ pub struct Range {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceRange {
     /// The file this range is in.
-    pub file_id: FileId,
+    pub file_id: FileIdentityId,
     /// The byte and line-column range.
     pub range: Range,
 }
@@ -90,36 +77,69 @@ pub struct SourceRange {
 // ---------------------------------------------------------------------------
 
 /// Kinds of symbols the system can extract.
+///
+/// **Stability contract** (per DESIGN §2.4): new variants may only be added
+/// at the end. Integer discriminants must never change. Adding a variant
+/// does not count as a schema migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SymbolKind {
     /// A function or method definition.
-    Function,
+    Function = 1,
     /// A struct / record definition.
-    Struct,
+    Struct = 2,
     /// An enum definition.
-    Enum,
+    Enum = 3,
     /// A type alias.
-    TypeAlias,
+    TypeAlias = 4,
     /// A trait / interface definition.
-    Trait,
+    Trait = 5,
     /// An implementation block.
-    Impl,
+    Impl = 6,
     /// A module / namespace declaration.
-    Module,
+    Module = 7,
     /// A variable or constant.
-    Variable,
+    Variable = 8,
     /// A macro definition.
-    Macro,
+    Macro = 9,
     /// Any other symbol kind not yet classified.
-    Other,
+    Other = 99,
+}
+
+impl SymbolKind {
+    /// Convert to integer for SQLite storage.
+    ///
+    /// Returns the explicit discriminant value.
+    pub fn to_db(self) -> i64 {
+        self as i64
+    }
+
+    /// Convert from integer stored in SQLite.
+    ///
+    /// Unknown values map to `Other`.
+    pub fn from_db(v: i64) -> Self {
+        match v {
+            1 => Self::Function,
+            2 => Self::Struct,
+            3 => Self::Enum,
+            4 => Self::TypeAlias,
+            5 => Self::Trait,
+            6 => Self::Impl,
+            7 => Self::Module,
+            8 => Self::Variable,
+            9 => Self::Macro,
+            _ => Self::Other,
+        }
+    }
 }
 
 /// A named symbol extracted from source code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Symbol {
-    /// Unique identifier.
-    pub id: SymbolId,
+    /// Stable identity (content-derived, survives re-index).
+    pub identity_id: SymbolIdentityId,
+    /// Version-specific ID (changes when body content changes).
+    pub version_id: SymbolVersionId,
     /// Human-readable name (e.g. `parse_file`).
     pub name: String,
     /// Fully-qualified name when available (e.g. `mnemo_parser::parse_file`).
@@ -127,7 +147,7 @@ pub struct Symbol {
     /// What kind of symbol this is.
     pub kind: SymbolKind,
     /// The file where this symbol is defined.
-    pub file_id: FileId,
+    pub file_id: FileIdentityId,
     /// The source location of the definition.
     pub definition_range: Range,
     /// Language of the source file.
@@ -139,28 +159,51 @@ pub struct Symbol {
 // ---------------------------------------------------------------------------
 
 /// Kinds of directed edges between symbols (or files).
+///
+/// **Stability contract** (per DESIGN §2.4): same as `SymbolKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     /// Symbol A calls symbol B.
-    Calls,
+    Calls = 1,
     /// Symbol A imports / uses symbol B.
-    Imports,
+    Imports = 2,
     /// Symbol A contains symbol B (module → child).
-    Contains,
+    Contains = 3,
     /// Symbol A is defined / implemented in terms of symbol B (e.g. implements).
-    Implements,
+    Implements = 4,
     /// File A depends on file B (import-level).
-    FileDepends,
+    FileDepends = 5,
+}
+
+impl EdgeKind {
+    /// Convert to integer for SQLite storage.
+    pub fn to_db(self) -> i64 {
+        self as i64
+    }
+
+    /// Convert from integer stored in SQLite.
+    ///
+    /// Unknown values map to `Calls` as a conservative default.
+    pub fn from_db(v: i64) -> Self {
+        match v {
+            1 => Self::Calls,
+            2 => Self::Imports,
+            3 => Self::Contains,
+            4 => Self::Implements,
+            5 => Self::FileDepends,
+            _ => Self::Calls,
+        }
+    }
 }
 
 /// A directed edge in the code graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Edge {
-    /// Source node (symbol or file id).
-    pub from: SymbolId,
-    /// Target node (symbol or file id).
-    pub to: SymbolId,
+    /// Source node (symbol identity id).
+    pub from: SymbolIdentityId,
+    /// Target node (symbol identity id).
+    pub to: SymbolIdentityId,
     /// Relationship kind.
     pub kind: EdgeKind,
     /// Optional source range where the edge is evidenced.

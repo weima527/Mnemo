@@ -5,14 +5,14 @@
 //!
 //! Initial MVP target: Rust (via `tree-sitter-rust`).
 
-use mnemo_core::{Confidence, FileId, Language, Range, Symbol, SymbolId, SymbolKind};
+use mnemo_core::{Confidence, FileIdentityId, Language, Range, Symbol, SymbolIdentityId, SymbolKind};
 use std::path::Path;
 
 /// A parsed source file with extracted symbols and their source ranges.
 #[derive(Debug, Clone)]
 pub struct ParseResult {
     /// The file that was parsed.
-    pub file_id: FileId,
+    pub file_id: FileIdentityId,
     /// Detected language.
     pub language: Language,
     /// Symbols found in the file.
@@ -34,7 +34,7 @@ pub struct ParseError {
 /// The language is auto-detected from the file extension.
 /// Unknown or unsupported languages return an empty `ParseResult`
 /// with a single `ParseError`.
-pub fn parse_file(file_id: FileId, path: &Path, source: &str) -> ParseResult {
+pub fn parse_file(file_id: FileIdentityId, path: &Path, source: &str) -> ParseResult {
     let language = path
         .extension()
         .and_then(|e| e.to_str())
@@ -62,7 +62,7 @@ pub fn parse_file(file_id: FileId, path: &Path, source: &str) -> ParseResult {
 /// Stub: parse Rust source code via tree-sitter.
 ///
 /// TODO: Integrate `tree-sitter-rust` grammar and walk the CST.
-fn parse_rust(file_id: FileId, _source: &str) -> ParseResult {
+fn parse_rust(file_id: FileIdentityId, _source: &str) -> ParseResult {
     // Placeholder — returns an empty result.
     // Real implementation will:
     // 1. Set the tree-sitter parser language to Rust.
@@ -78,7 +78,7 @@ fn parse_rust(file_id: FileId, _source: &str) -> ParseResult {
 }
 
 /// Stub: parse TypeScript source code via tree-sitter.
-fn parse_typescript(file_id: FileId, _source: &str) -> ParseResult {
+fn parse_typescript(file_id: FileIdentityId, _source: &str) -> ParseResult {
     // Placeholder — same structure as parse_rust.
     tracing::debug!(%file_id, "parse_typescript: not yet implemented");
     ParseResult {
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn parse_unsupported_extension() {
         let result = parse_file(
-            FileId::new_v4(),
+            FileIdentityId::ZERO,
             Path::new("main.py"),
             "print('hello')",
         );

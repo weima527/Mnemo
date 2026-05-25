@@ -9,7 +9,7 @@
 //!
 //! This is the primary entrypoint for `index_repo`.
 
-use mnemo_core::{CoreError, FileId, Language};
+use mnemo_core::{CoreError, FileIdentityId, Language};
 use mnemo_git::detect_working_tree_changes;
 use mnemo_parser::parse_file;
 use mnemo_store::open_database;
@@ -90,8 +90,8 @@ pub fn index_repo(repo_path: &Path, force: bool) -> Result<IndexResult, CoreErro
     })
 }
 
-/// Walk the repository, returning (FileId, path, source) for supported files.
-fn walk_repo(root: &Path) -> Result<Vec<(FileId, PathBuf, String)>, CoreError> {
+/// Walk the repository, returning (FileIdentityId, path, source) for supported files.
+fn walk_repo(root: &Path) -> Result<Vec<(FileIdentityId, PathBuf, String)>, CoreError> {
     let mut results = Vec::new();
 
     for entry in walkdir::WalkDir::new(root)
@@ -113,7 +113,7 @@ fn walk_repo(root: &Path) -> Result<Vec<(FileId, PathBuf, String)>, CoreError> {
 
         let contents = std::fs::read_to_string(path).map_err(CoreError::Io)?;
 
-        results.push((FileId::new_v4(), path.to_path_buf(), contents));
+        results.push((FileIdentityId::ZERO, path.to_path_buf(), contents)); // FIXME(M0.4): derive from project+path
     }
 
     Ok(results)

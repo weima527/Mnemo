@@ -64,7 +64,7 @@ fn main() -> anyhow::Result<()> {
         Command::Parse { file } => {
             let source = std::fs::read_to_string(&file)?;
             let result = mnemo_parser::parse_file(
-                mnemo_core::types::FileId::new_v4(),
+                mnemo_core::FileIdentityId::ZERO, // temporary until M0.4 path resolution
                 &file,
                 &source,
             );

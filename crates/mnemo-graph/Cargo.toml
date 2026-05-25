@@ -9,3 +9,4 @@ description = "Symbol graph, dependency edges, and traversal for Mnemo"
 mnemo-core = { path = "../mnemo-core" }
 serde = { workspace = true }
 tracing = { workspace = true }
+blake3 = { workspace = true }
