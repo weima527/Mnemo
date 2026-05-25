@@ -62,8 +62,7 @@ pub fn index_repo(repo_path: &Path, force: bool) -> Result<IndexResult, CoreErro
 
     // If force, drop and recreate schema.
     if force {
-        conn.execute_batch("DROP TABLE IF EXISTS schema_version;")
-            .map_err(|e| CoreError::Internal(format!("force reset: {e}")))?;
+        conn.execute_batch("DROP TABLE IF EXISTS schema_version;")?;
         mnemo_store::schema::migrate(&conn)?;
     }
 
@@ -99,9 +98,7 @@ fn walk_repo(root: &Path) -> Result<Vec<(FileId, PathBuf, String)>, CoreError> {
         .into_iter()
         .filter_entry(|e| !is_ignored(e.path(), root))
     {
-        let entry = entry.map_err(|e| {
-            CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
-        })?;
+        let entry = entry.map_err(|e| CoreError::Io(std::io::Error::other(e)))?;
 
         if !entry.file_type().is_file() {
             continue;

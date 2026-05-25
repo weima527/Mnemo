@@ -5,9 +5,16 @@ edition = "2021"
 license = "Apache-2.0"
 description = "Domain types, errors, and traits for the Mnemo code intelligence layer"
 
+[features]
+default = ["git", "sqlite"]
+git = ["dep:git2"]
+sqlite = ["dep:rusqlite"]
+
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
+git2 = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }

@@ -14,15 +14,13 @@ pub mod schema;
 ///
 /// Runs pending migrations automatically.
 pub fn open_database(path: &Path) -> Result<Connection, CoreError> {
-    let conn = Connection::open(path).map_err(CoreError::Io)?;
+    let conn = Connection::open(path)?;
 
     // Enable WAL mode for better concurrent-read performance.
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .map_err(|e| CoreError::Internal(format!("failed to set WAL mode: {e}")))?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
 
     // Enable foreign key enforcement.
-    conn.pragma_update(None, "foreign_keys", "ON")
-        .map_err(|e| CoreError::Internal(format!("failed to enable foreign keys: {e}")))?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
 
     // Run schema initialization / migrations.
     schema::migrate(&conn)?;

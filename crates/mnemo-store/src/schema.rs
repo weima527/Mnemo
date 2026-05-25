@@ -17,8 +17,7 @@ pub fn migrate(conn: &Connection) -> Result<(), CoreError> {
         "CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER PRIMARY KEY
         );",
-    )
-    .map_err(|e| CoreError::Internal(format!("migration bootstrap failed: {e}")))?;
+    )?;
 
     // Read current version (default 0 if no row).
     let current: u32 = conn
@@ -41,9 +40,11 @@ pub fn migrate(conn: &Connection) -> Result<(), CoreError> {
 fn apply_migration(conn: &Connection, version: u32) -> Result<(), CoreError> {
     match version {
         1 => migration_v1(conn),
-        _ => Err(CoreError::Internal(format!(
-            "unknown migration version: {version}"
-        ))),
+        _ => Err(CoreError::migration_error(
+            version,
+            version,
+            "unknown migration version",
+        )),
     }
 }
 
@@ -184,8 +185,7 @@ fn migration_v1(conn: &Connection) -> Result<(), CoreError> {
         -- Record the migration version.
         INSERT INTO schema_version (version) VALUES (1);
         ",
-    )
-    .map_err(|e| CoreError::Internal(format!("migration v1 failed: {e}")))?;
+    )?;
 
     Ok(())
 }

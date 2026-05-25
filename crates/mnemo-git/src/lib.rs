@@ -48,54 +48,45 @@ pub fn diff_refs(
     base: &str,
     head: &str,
 ) -> Result<GitDiff, CoreError> {
-    let repo = git2::Repository::open(repo_path)
-        .map_err(|e| CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    let repo = git2::Repository::open(repo_path)?;
 
     let base_tree = resolve_tree(&repo, base)?;
     let head_tree = resolve_tree(&repo, head)?;
 
-    let diff = repo
-        .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)
-        .map_err(|e| CoreError::Internal(format!("git diff failed: {e}")))?;
+    let diff = repo.diff_tree_to_tree(
+        Some(&base_tree),
+        Some(&head_tree),
+        None,
+    )?;
 
     collect_diff_entries(&diff)
 }
 
 /// Detect changed files in the working tree (unstaged + staged).
 pub fn detect_working_tree_changes(repo_path: &Path) -> Result<GitDiff, CoreError> {
-    let repo = git2::Repository::open(repo_path)
-        .map_err(|e| CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    let repo = git2::Repository::open(repo_path)?;
 
     // Diff HEAD against working tree (includes staged changes).
     let head_tree = match repo.head() {
-        Ok(head) => {
-            let obj = head
-                .peel_to_tree()
-                .map_err(|e| CoreError::Internal(format!("HEAD tree: {e}")))?;
-            Some(obj)
-        }
+        Ok(head) => Some(head.peel_to_tree()?),
         Err(_) => None, // No commits yet — treat as all-added.
     };
 
     let mut opts = git2::DiffOptions::new();
     opts.include_untracked(false);
 
-    let diff = repo
-        .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))
-        .map_err(|e| CoreError::Internal(format!("working tree diff failed: {e}")))?;
+    let diff = repo.diff_tree_to_workdir_with_index(
+        head_tree.as_ref(),
+        Some(&mut opts),
+    )?;
 
     collect_diff_entries(&diff)
 }
 
 /// Get the commit SHA for a given ref (branch, tag, or "HEAD").
 pub fn resolve_commit_sha(repo_path: &Path, ref_name: &str) -> Result<String, CoreError> {
-    let repo = git2::Repository::open(repo_path)
-        .map_err(|e| CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-
-    let obj = repo
-        .revparse_single(ref_name)
-        .map_err(|e| CoreError::NotFound("git ref", format!("{ref_name}: {e}")))?;
-
+    let repo = git2::Repository::open(repo_path)?;
+    let obj = repo.revparse_single(ref_name)?;
     Ok(obj.id().to_string())
 }
 
@@ -107,12 +98,8 @@ fn resolve_tree<'a>(
     repo: &'a git2::Repository,
     ref_name: &str,
 ) -> Result<git2::Tree<'a>, CoreError> {
-    let obj = repo
-        .revparse_single(ref_name)
-        .map_err(|e| CoreError::NotFound("git ref", format!("{ref_name}: {e}")))?;
-
-    obj.peel_to_tree()
-        .map_err(|e| CoreError::Internal(format!("peel {ref_name}: {e}")))
+    let obj = repo.revparse_single(ref_name)?;
+    Ok(obj.peel_to_tree()?)
 }
 
 fn collect_diff_entries(diff: &git2::Diff) -> Result<GitDiff, CoreError> {
@@ -149,8 +136,7 @@ fn collect_diff_entries(diff: &git2::Diff) -> Result<GitDiff, CoreError> {
         None,
         None,
         None,
-    )
-    .map_err(|e| CoreError::Internal(format!("diff foreach: {e}")))?;
+    )?;
 
     Ok(GitDiff {
         added,
