@@ -1047,14 +1047,14 @@ dependencies = [
 name = "mnemo-mcp"
 version = "0.1.0"
 dependencies = [
- "mnemo-core",
- "mnemo-git",
- "mnemo-graph",
- "mnemo-index",
- "mnemo-memory",
+ "anyhow",
+ "mnemo-daemon",
+ "mnemo-tenant",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -43,8 +43,10 @@ uuid = { version = "1", features = ["v4"] }
 blake3 = "1"
 # Hex encoding for ID display
 hex = "0.4"
-# MCP protocol (Rust)
-rmcp = { version = "0.7", features = ["server"] }
+# MCP protocol (Rust). macros = #[tool] etc.; transport-io = stdio server.
+rmcp = { version = "0.7", features = ["server", "macros", "transport-io"] }
+# JSON Schema for MCP tool definitions (must match rmcp 0.7's schemars 1.0)
+schemars = "1"
 # Timestamps
 chrono = { version = "0.4", features = ["serde"] }
 # CLI argument parsing

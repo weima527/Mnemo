@@ -1,8 +1,6 @@
-//! Binary entrypoint for the Mnemo MCP server.
-//!
-//! Starts the MCP server on stdio transport.
+//! Binary entrypoint for the Mnemo MCP bridge (stdio transport).
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     mnemo_mcp::serve().await
 }
