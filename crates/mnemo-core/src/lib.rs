@@ -12,5 +12,6 @@ pub use ids::{
     FileIdentityId, ProjectId, SnapshotId, SymbolIdentityId, SymbolVersionId,
 };
 pub use types::{
-    Confidence, Edge, EdgeKind, Language, Range, SourceRange, Symbol, SymbolKind,
+    Confidence, Edge, EdgeKind, Language, Range, RawEdge, RawSymbol, SourceRange, Symbol,
+    SymbolKind,
 };

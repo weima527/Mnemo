@@ -211,6 +211,50 @@ pub struct Edge {
 }
 
 // ---------------------------------------------------------------------------
+// Raw (pre-identity) extraction output
+// ---------------------------------------------------------------------------
+
+/// A symbol as extracted by the parser, before identity/version IDs are
+/// assigned.
+///
+/// Content-derived IDs (`SymbolIdentityId`, `SymbolVersionId`) require project
+/// context — the `ProjectId` and the repo-relative file path — that the parser
+/// does not have. The index pipeline finalizes a `RawSymbol` into a [`Symbol`]
+/// once that context is known.
+#[derive(Debug, Clone)]
+pub struct RawSymbol {
+    /// Human-readable name (e.g. `add`).
+    pub name: String,
+    /// In-file qualified name (mod / impl / trait nesting joined by `::`, e.g.
+    /// `Point::manhattan`). The crate- and file-level module prefix is added
+    /// downstream by the resolver, which knows the file's module path.
+    pub qualified_name: String,
+    /// What kind of symbol this is.
+    pub kind: SymbolKind,
+    /// Source location of the definition.
+    pub definition_range: Range,
+    /// blake3 hash of the symbol's source text; feeds the `SymbolVersionId`.
+    pub content_hash: blake3::Hash,
+}
+
+/// A reference between symbols as extracted by the parser, before the target
+/// is resolved to a concrete [`SymbolIdentityId`].
+///
+/// The origin is known (the enclosing definition's qualified name), but the
+/// target is only a raw name. The resolver (M1.2) turns this into an [`Edge`].
+#[derive(Debug, Clone)]
+pub struct RawEdge {
+    /// In-file qualified name of the symbol the reference originates from.
+    pub from_qualified_name: String,
+    /// The raw (unresolved) name being referenced (e.g. a callee `mul`).
+    pub to_name: String,
+    /// Relationship kind.
+    pub kind: EdgeKind,
+    /// Source range where the reference appears, if known.
+    pub location: Option<Range>,
+}
+
+// ---------------------------------------------------------------------------
 // Confidence
 // ---------------------------------------------------------------------------
 

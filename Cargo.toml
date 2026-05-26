@@ -29,8 +29,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Embedded SQLite
 rusqlite = { version = "0.32", features = ["bundled"] }
-# Tree-sitter
-tree-sitter = "0.24"
+# Tree-sitter (runtime 0.25 matches the ABI-15 grammar below)
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
 # Git bindings
 git2 = "0.19"
 # UUID generation
