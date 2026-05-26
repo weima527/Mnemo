@@ -6,7 +6,6 @@
 
 use mnemo_core::{CoreError, ProjectId};
 use rusqlite::{params, Connection};
-use std::path::Path;
 
 /// Open (or create) the global registry database.
 pub fn open_registry() -> Result<Connection, CoreError> {
@@ -19,6 +18,7 @@ pub fn open_registry() -> Result<Connection, CoreError> {
     let conn = Connection::open(&path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.pragma_update(None, "busy_timeout", 5000)?; // tolerate concurrent attach/index
 
     // Initialize schema.
     conn.execute_batch(
@@ -69,7 +69,7 @@ pub fn upsert_project(
            last_attached_at = excluded.last_attached_at,
            status = 'active'",
         params![
-            uuid.to_string(),
+            uuid.to_hex(),
             canonical_path,
             display_name,
             now,
@@ -88,7 +88,7 @@ pub fn update_index_stats(
     let now = unix_now();
     conn.execute(
         "UPDATE project SET last_indexed_at = ?1, db_size_bytes = ?2 WHERE uuid = ?3",
-        params![now, db_size_bytes, uuid.to_string()],
+        params![now, db_size_bytes, uuid.to_hex()],
     )?;
     Ok(())
 }
@@ -125,7 +125,7 @@ pub fn list_active_projects(conn: &Connection) -> Result<Vec<ProjectEntry>, Core
 pub fn archive_project(conn: &Connection, uuid: ProjectId) -> Result<(), CoreError> {
     conn.execute(
         "UPDATE project SET status = 'archived' WHERE uuid = ?1",
-        params![uuid.to_string()],
+        params![uuid.to_hex()],
     )?;
     Ok(())
 }

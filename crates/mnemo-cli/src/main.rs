@@ -53,7 +53,10 @@ fn main() -> anyhow::Result<()> {
         Command::Index { repo_path, force } => {
             tracing::info!(path = %repo_path.display(), force, "indexing repository");
             let result = mnemo_index::index_repo(&repo_path, force)?;
-            println!("Indexed {} files, {} symbols, {} edges in {}ms (v{})",
+            println!("project:  {}", result.project_id);
+            println!("index db: {}", result.db_path.display());
+            println!(
+                "Indexed {} files, {} symbols, {} edges in {}ms (schema v{})",
                 result.file_count,
                 result.symbol_count,
                 result.edge_count,
