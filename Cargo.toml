@@ -10,6 +10,7 @@ members = [
     "crates/mnemo-git",
     "crates/mnemo-resolve",
     "crates/mnemo-index",
+    "crates/mnemo-tenant",
     "crates/mnemo-mcp",
     "crates/mnemo-memory",
     "crates/mnemo-cli",
@@ -53,6 +54,11 @@ walkdir = "2"
 dirs = "5"
 # Temp dirs for tests
 tempfile = "3"
+# Multi-tenant daemon (M2): concurrent map, lock-free graph swap, LRU, fast mutex
+dashmap = "6"
+arc-swap = "1"
+lru = "0.12"
+parking_lot = "0.12"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

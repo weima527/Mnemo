@@ -10,7 +10,9 @@
 
 use mnemo_core::{CoreError, SnapshotId, SymbolKind};
 use mnemo_graph::{GraphNode, SymbolGraph};
-use mnemo_store::dao::{edge as edge_dao, file as file_dao, snapshot as snapshot_dao, symbol as symbol_dao};
+use mnemo_store::dao::{
+    edge as edge_dao, file as file_dao, snapshot as snapshot_dao, symbol as symbol_dao,
+};
 use mnemo_store::open_database;
 use mnemo_store::paths::{project_db, resolve_project_id};
 use rusqlite::Connection;
@@ -133,7 +135,10 @@ fn open_graph(repo_path: &Path) -> Result<Option<SymbolGraph>, CoreError> {
 }
 
 /// Hydrate an in-memory [`SymbolGraph`] from the DB at `snapshot`.
-fn hydrate(conn: &Connection, snapshot: SnapshotId) -> Result<SymbolGraph, CoreError> {
+///
+/// Public so the daemon's tenant layer (M2.1) can build a `ProjectContext`'s
+/// graph cache from a connection it already holds.
+pub fn hydrate(conn: &Connection, snapshot: SnapshotId) -> Result<SymbolGraph, CoreError> {
     let file_paths: HashMap<_, _> = file_dao::paths(conn)?.into_iter().collect();
     let nodes = symbol_dao::at_snapshot(conn, snapshot)?
         .into_iter()
