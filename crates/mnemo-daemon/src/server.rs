@@ -197,6 +197,44 @@ async fn dispatch(state: &DaemonState, method: &str, params: Value) -> Result<Va
             Ok(result)
         }
 
+        "overlay.set" => {
+            let p: protocol::OverlaySetParams = parse(params)?;
+            let ctx = state
+                .manager
+                .get(Path::new(&p.path))
+                .await
+                .map_err(internal)?;
+            let mut files: Vec<mnemo_index::overlay::OverlayFile> = p
+                .files
+                .into_iter()
+                .map(|f| mnemo_index::overlay::OverlayFile {
+                    rel_path: f.rel_path,
+                    content: Some(f.content),
+                })
+                .collect();
+            files.extend(
+                p.deleted
+                    .into_iter()
+                    .map(|rel_path| mnemo_index::overlay::OverlayFile {
+                        rel_path,
+                        content: None,
+                    }),
+            );
+            ctx.set_overlay(files).await.map_err(internal)?;
+            Ok(json!({ "ok": true, "symbol_count": ctx.graph().symbol_count() }))
+        }
+
+        "overlay.clear" => {
+            let p: protocol::PathParams = parse(params)?;
+            let ctx = state
+                .manager
+                .get(Path::new(&p.path))
+                .await
+                .map_err(internal)?;
+            ctx.clear_overlay();
+            Ok(json!({ "ok": true }))
+        }
+
         other => Err(RpcError::new(
             codes::METHOD_NOT_FOUND,
             format!("unknown method: {other}"),

@@ -13,6 +13,7 @@
 //!
 //! This is the primary entrypoint for `index_repo`.
 
+pub mod overlay;
 pub mod query;
 
 use mnemo_core::{
@@ -114,7 +115,12 @@ pub fn index_repo(repo_path: &Path, force: bool) -> Result<IndexResult, CoreErro
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unnamed");
-    upsert_project(&registry, project_id, &canonical.to_string_lossy(), display_name)?;
+    upsert_project(
+        &registry,
+        project_id,
+        &canonical.to_string_lossy(),
+        display_name,
+    )?;
 
     // 4. Open (create + migrate) the per-project DB under `~/.mnemo/`.
     let db_path = project_db(project_id);
@@ -189,7 +195,12 @@ pub fn index_repo(repo_path: &Path, force: bool) -> Result<IndexResult, CoreErro
         snapshot = snapshot_dao::create(&tx, "filehash", None, None, parent)?;
 
         for (file, finals, _edges) in &per_file {
-            file_dao::upsert_identity(&tx, file.file_id, &file.rel_path, language_name(file.language))?;
+            file_dao::upsert_identity(
+                &tx,
+                file.file_id,
+                &file.rel_path,
+                language_name(file.language),
+            )?;
             for sym in finals {
                 symbol_dao::upsert_identity(
                     &tx,
@@ -217,7 +228,14 @@ pub fn index_repo(repo_path: &Path, force: bool) -> Result<IndexResult, CoreErro
 
         for edge in &resolved_edges {
             if !edge_dao::open_exists(&tx, edge.from, edge.to, edge.kind)? {
-                edge_dao::insert_version(&tx, edge.from, edge.to, edge.kind, EDGE_CONFIDENCE, snapshot)?;
+                edge_dao::insert_version(
+                    &tx,
+                    edge.from,
+                    edge.to,
+                    edge.kind,
+                    EDGE_CONFIDENCE,
+                    snapshot,
+                )?;
                 new_edges += 1;
             }
         }
@@ -329,7 +347,10 @@ mod tests {
     fn is_ignored_detects_default_patterns() {
         let root = Path::new("/repo");
         assert!(is_ignored(Path::new("/repo/.git/config"), root));
-        assert!(is_ignored(Path::new("/repo/node_modules/pkg/index.js"), root));
+        assert!(is_ignored(
+            Path::new("/repo/node_modules/pkg/index.js"),
+            root
+        ));
         assert!(!is_ignored(Path::new("/repo/src/main.rs"), root));
     }
 

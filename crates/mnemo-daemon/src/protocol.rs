@@ -129,6 +129,27 @@ pub struct QueryParams {
     pub query: String,
 }
 
+/// One changed working-tree file for `overlay.set`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OverlayFileArg {
+    /// Repo-relative path (forward slashes), e.g. `src/math.rs`.
+    pub rel_path: String,
+    /// New file contents.
+    pub content: String,
+}
+
+/// Params for `overlay.set` (replaces the project's working-tree overlay).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OverlaySetParams {
+    pub path: String,
+    /// Changed/added files with their new contents.
+    #[serde(default)]
+    pub files: Vec<OverlayFileArg>,
+    /// Repo-relative paths of deleted files.
+    #[serde(default)]
+    pub deleted: Vec<String>,
+}
+
 /// Summary of one project (in `project.attach`, `project.list`, status).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectInfo {

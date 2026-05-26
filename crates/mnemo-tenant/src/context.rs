@@ -2,17 +2,23 @@
 //!
 //! A [`ProjectContext`] caches the project's hydrated [`SymbolGraph`] in an
 //! `ArcSwap` for lock-free reads. The DB is opened on demand for the rare
-//! operations that touch it (hydration, re-index) — there is no long-lived
-//! `Connection` shared across threads — and every such op runs on
+//! operations that touch it (hydration, re-index, overlay rebuild) — there is no
+//! long-lived `Connection` shared across threads — and every such op runs on
 //! `tokio::task::spawn_blocking`.
+//!
+//! On top of the base (last-indexed snapshot) graph, an optional **working-tree
+//! overlay** holds uncommitted edits re-parsed in memory; `graph()` is
+//! overlay-first. The overlay never writes the DB (DESIGN §6.3).
 
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use mnemo_core::{CoreError, ProjectId};
 use mnemo_graph::SymbolGraph;
+use mnemo_index::overlay::{hydrate_with_overlay, OverlayFile};
 use mnemo_store::dao::snapshot as snapshot_dao;
 use mnemo_store::open_database;
 use mnemo_store::paths::{ensure_home_layout, project_db, resolve_project_id};
 use mnemo_store::registry::{open_registry, upsert_project};
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -33,13 +39,19 @@ pub struct ProjectContext {
     project_id: ProjectId,
     canonical_path: PathBuf,
     db_path: PathBuf,
-    graph: ArcSwap<SymbolGraph>,
+    /// Graph at the latest indexed snapshot (DB-backed).
+    base: ArcSwap<SymbolGraph>,
+    /// Merged base+overlay graph; `None` when no working-tree overlay is set.
+    overlay: ArcSwapOption<SymbolGraph>,
+    /// The changed files currently overlaid (kept so the overlay can be rebuilt
+    /// after a re-index).
+    overlay_files: Mutex<Vec<OverlayFile>>,
     stats: Stats,
 }
 
 impl ProjectContext {
     /// Resolve `path`, ensure its DB exists and is registered, and hydrate the
-    /// graph at the latest snapshot (empty if the project was never indexed).
+    /// base graph at the latest snapshot (empty if the project was never indexed).
     pub(crate) async fn build(path: &Path) -> Result<Arc<Self>, CoreError> {
         let path = path.to_path_buf();
         tokio::task::spawn_blocking(move || Self::build_blocking(&path))
@@ -70,7 +82,7 @@ impl ProjectContext {
             display_name,
         )?;
 
-        let graph = match snapshot_dao::latest(&conn)? {
+        let base = match snapshot_dao::latest(&conn)? {
             Some(snapshot) => mnemo_index::query::hydrate(&conn, snapshot)?,
             None => SymbolGraph::default(),
         };
@@ -79,7 +91,9 @@ impl ProjectContext {
             project_id,
             canonical_path: canonical,
             db_path,
-            graph: ArcSwap::from_pointee(graph),
+            base: ArcSwap::from_pointee(base),
+            overlay: ArcSwapOption::empty(),
+            overlay_files: Mutex::new(Vec::new()),
             stats: Stats::default(),
         }))
     }
@@ -99,9 +113,17 @@ impl ProjectContext {
         &self.db_path
     }
 
-    /// Lock-free snapshot of the current symbol graph.
+    /// Lock-free snapshot of the active graph: the overlay if one is set,
+    /// otherwise the base (indexed) graph.
     pub fn graph(&self) -> Arc<SymbolGraph> {
-        self.graph.load_full()
+        self.overlay
+            .load_full()
+            .unwrap_or_else(|| self.base.load_full())
+    }
+
+    /// Whether a working-tree overlay is currently active.
+    pub fn has_overlay(&self) -> bool {
+        self.overlay.load().is_some()
     }
 
     /// Unix seconds of the last access.
@@ -127,11 +149,42 @@ impl ProjectContext {
         self.touch();
     }
 
-    /// Re-load the graph from the DB at the latest snapshot and atomically swap
-    /// it in. Call after a re-index so cached queries see fresh data.
+    /// Set (replace) the working-tree overlay from `files` and rebuild the
+    /// merged graph in memory. Never writes the DB.
+    pub async fn set_overlay(&self, files: Vec<OverlayFile>) -> Result<(), CoreError> {
+        let merged = self.build_overlay(&files).await?;
+        *self.overlay_files.lock() = files;
+        self.overlay.store(Some(Arc::new(merged)));
+        Ok(())
+    }
+
+    /// Drop the working-tree overlay; queries fall back to the base graph.
+    pub fn clear_overlay(&self) {
+        self.overlay.store(None);
+        self.overlay_files.lock().clear();
+    }
+
+    /// Build the merged base+overlay graph for `files` (read-only on the DB).
+    async fn build_overlay(&self, files: &[OverlayFile]) -> Result<SymbolGraph, CoreError> {
+        let project_id = self.project_id;
+        let db_path = self.db_path.clone();
+        let files = files.to_vec();
+        tokio::task::spawn_blocking(move || -> Result<SymbolGraph, CoreError> {
+            let conn = open_database(&db_path)?;
+            match snapshot_dao::latest(&conn)? {
+                Some(snapshot) => hydrate_with_overlay(&conn, snapshot, project_id, &files),
+                None => Ok(SymbolGraph::default()),
+            }
+        })
+        .await
+        .expect("tenant overlay task panicked")
+    }
+
+    /// Re-load the base graph from the DB at the latest snapshot, and rebuild the
+    /// overlay (if any) on top of it. Call after a re-index.
     pub async fn rehydrate(&self) -> Result<(), CoreError> {
         let db_path = self.db_path.clone();
-        let graph = tokio::task::spawn_blocking(move || -> Result<SymbolGraph, CoreError> {
+        let base = tokio::task::spawn_blocking(move || -> Result<SymbolGraph, CoreError> {
             let conn = open_database(&db_path)?;
             match snapshot_dao::latest(&conn)? {
                 Some(snapshot) => mnemo_index::query::hydrate(&conn, snapshot),
@@ -140,7 +193,12 @@ impl ProjectContext {
         })
         .await
         .expect("tenant rehydrate task panicked")?;
-        self.graph.store(Arc::new(graph));
+        self.base.store(Arc::new(base));
+
+        let files = self.overlay_files.lock().clone();
+        if !files.is_empty() {
+            self.set_overlay(files).await?;
+        }
         Ok(())
     }
 }

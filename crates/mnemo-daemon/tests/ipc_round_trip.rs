@@ -125,3 +125,95 @@ async fn ipc_round_trip() {
     call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
 }
+
+/// A modified `math.rs` that adds a `triple` function.
+const MODIFIED_MATH: &str = "\
+pub fn add(a: i64, b: i64) -> i64 { a + b }
+pub fn mul(a: i64, b: i64) -> i64 { a * b }
+pub fn square(n: i64) -> i64 { mul(n, n) }
+pub fn triple(n: i64) -> i64 { add(n, add(n, n)) }
+";
+
+#[tokio::test]
+async fn overlay_round_trip() {
+    let endpoint = unique_endpoint();
+    let manager = Arc::new(TenantManager::new(TenantConfig::default()));
+    let server = {
+        let endpoint = endpoint.clone();
+        tokio::spawn(async move { mnemo_daemon::run(&endpoint, manager).await })
+    };
+    let mut up = false;
+    for _ in 0..100 {
+        if call(&endpoint, "daemon.status", json!({})).await.is_ok() {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(up, "daemon did not start listening");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("proj");
+    copy_dir(&fixtures_root().join("basic_rust"), &repo);
+    let repo_str = repo.to_string_lossy().into_owned();
+
+    call(
+        &endpoint,
+        "project.index",
+        json!({ "path": repo_str, "force": false }),
+    )
+    .await
+    .unwrap();
+
+    // `triple` is not in the base index.
+    let base = call(
+        &endpoint,
+        "query.search",
+        json!({ "path": repo_str, "query": "triple" }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        base.as_array().is_some_and(|a| a.is_empty()),
+        "base should lack `triple`, got {base}"
+    );
+
+    // Overlay a modified math.rs; `triple` becomes visible over IPC.
+    call(
+        &endpoint,
+        "overlay.set",
+        json!({ "path": repo_str, "files": [{ "rel_path": "src/math.rs", "content": MODIFIED_MATH }] }),
+    )
+    .await
+    .unwrap();
+    let overlaid = call(
+        &endpoint,
+        "query.search",
+        json!({ "path": repo_str, "query": "triple" }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        overlaid.as_array().is_some_and(|a| !a.is_empty()),
+        "overlay `triple` should be visible over IPC, got {overlaid}"
+    );
+
+    // Clearing the overlay falls back to the base graph.
+    call(&endpoint, "overlay.clear", json!({ "path": repo_str }))
+        .await
+        .unwrap();
+    let cleared = call(
+        &endpoint,
+        "query.search",
+        json!({ "path": repo_str, "query": "triple" }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        cleared.as_array().is_some_and(|a| a.is_empty()),
+        "after clear, `triple` should be gone, got {cleared}"
+    );
+
+    call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+}
