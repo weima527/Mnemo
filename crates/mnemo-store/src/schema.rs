@@ -56,6 +56,13 @@ fn apply_migration(conn: &Connection, version: u32) -> Result<(), CoreError> {
 fn migration_v1(conn: &Connection) -> Result<(), CoreError> {
     conn.execute_batch(
         "
+        -- Migration bookkeeping. Created here (not only in `migrate`) so that
+        -- `migration_v1` is self-contained and can run standalone (e.g. in tests).
+        -- `migrate` also creates it with IF NOT EXISTS, so this is idempotent.
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY
+        );
+
         -- Project-level metadata (key-value)
         CREATE TABLE IF NOT EXISTS meta (
             key   TEXT PRIMARY KEY,

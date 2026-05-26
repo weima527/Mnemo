@@ -4,7 +4,7 @@
 //! through edges (calls, imports, contains, implements, file-depends)
 //! and supports bounded traversal for context planning and impact analysis.
 
-use mnemo_core::{Edge, EdgeKind, FileIdentityId, SnapshotId, Symbol, SymbolIdentityId};
+use mnemo_core::{Edge, EdgeKind, FileIdentityId, Symbol, SymbolIdentityId};
 
 /// An in-memory working view of the code graph for a snapshot.
 ///

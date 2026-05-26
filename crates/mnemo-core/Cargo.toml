@@ -20,3 +20,6 @@ blake3 = { workspace = true }
 hex = { workspace = true }
 git2 = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

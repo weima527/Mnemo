@@ -7,7 +7,6 @@
 
 use mnemo_core::CoreError;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // Memory fact kinds
