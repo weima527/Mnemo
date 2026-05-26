@@ -5,7 +5,7 @@
 //!
 //! Initial MVP target: Rust (via `tree-sitter-rust`).
 
-use mnemo_core::{Confidence, FileIdentityId, Language, Range, Symbol, SymbolIdentityId, SymbolKind};
+use mnemo_core::{FileIdentityId, Language, Symbol};
 use std::path::Path;
 
 /// A parsed source file with extracted symbols and their source ranges.

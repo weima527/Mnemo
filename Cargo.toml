@@ -12,6 +12,7 @@ members = [
     "crates/mnemo-mcp",
     "crates/mnemo-memory",
     "crates/mnemo-cli",
+    "tests/invariants",
 ]
 
 [workspace.dependencies]
@@ -25,7 +26,7 @@ thiserror = "2"
 anyhow = "1"
 # Structured logging / spans
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Embedded SQLite
 rusqlite = { version = "0.32", features = ["bundled"] }
 # Tree-sitter
@@ -48,6 +49,8 @@ clap = { version = "4", features = ["derive"] }
 walkdir = "2"
 # Home directory resolution
 dirs = "5"
+# Temp dirs for tests
+tempfile = "3"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

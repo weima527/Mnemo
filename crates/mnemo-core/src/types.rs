@@ -3,7 +3,7 @@
 //! These types form the vocabulary used across all crates:
 //! symbols, files, edges, snapshots, overlays, etc.
 
-use crate::ids::{FileIdentityId, ProjectId, SnapshotId, SymbolIdentityId, SymbolVersionId};
+use crate::ids::{FileIdentityId, SymbolIdentityId, SymbolVersionId};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------

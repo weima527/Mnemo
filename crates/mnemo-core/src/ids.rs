@@ -46,6 +46,16 @@ macro_rules! id_newtype {
                 &self.0
             }
 
+            /// Full lowercase hex encoding (32 chars).
+            ///
+            /// Unlike `Display` (which prints only the first 8 chars for
+            /// readability), this is the **lossless** canonical string form and
+            /// round-trips through `FromStr`. Use it for storage keys, directory
+            /// names, and anywhere identity must be preserved.
+            pub fn to_hex(&self) -> String {
+                hex::encode(self.0)
+            }
+
             /// Zero ID (sentinel).
             pub const ZERO: Self = Self([0u8; 16]);
         }
@@ -381,6 +391,16 @@ mod tests {
     fn id_display_is_8_char_hex() {
         let id = ProjectId::from_bytes([0xde, 0xad, 0xbe, 0xef, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(id.to_string(), "deadbeef");
+    }
+
+    #[test]
+    fn to_hex_is_full_length_and_roundtrips() {
+        let id = SymbolIdentityId::from_bytes(*b"abcdefgh12345678");
+        let hex = id.to_hex();
+        assert_eq!(hex.len(), 32, "to_hex must be the full 32-char form");
+        assert_ne!(hex, id.to_string(), "to_hex must differ from short Display");
+        let parsed: SymbolIdentityId = hex.parse().unwrap();
+        assert_eq!(id, parsed);
     }
 
     #[test]

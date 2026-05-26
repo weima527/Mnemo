@@ -1,0 +1,16 @@
+[package]
+name = "mnemo-invariants"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Cross-crate invariant tests that must stay green for the lifetime of Mnemo"
+publish = false
+
+[dependencies]
+mnemo-core = { path = "../../crates/mnemo-core" }
+mnemo-index = { path = "../../crates/mnemo-index" }
+mnemo-store = { path = "../../crates/mnemo-store" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+walkdir = { workspace = true }

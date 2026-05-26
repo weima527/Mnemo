@@ -38,9 +38,12 @@ pub fn daemon_socket_path() -> PathBuf {
 
 /// Returns the per-project directory root.
 ///
+/// The directory name is the **full** 32-char hex id (`to_hex`), not the
+/// truncated `Display` form, so distinct projects never collide.
+///
 /// Example: `~/.mnemo/projects/a3f5e1c9.../`
 pub fn project_dir(id: ProjectId) -> PathBuf {
-    home_mnemo().join("projects").join(id.to_string())
+    home_mnemo().join("projects").join(id.to_hex())
 }
 
 /// Returns the path to a project's main index database.
@@ -80,9 +83,12 @@ pub fn ensure_home_layout() -> Result<(), CoreError> {
 /// Returns `(ProjectId, canonical_path)`.
 ///
 /// # Platform normalization
-/// - Symlinks resolved via `std::fs::canonicalize`.
+/// - Symlinks and `..` resolved via `std::fs::canonicalize`.
 /// - Windows drive letters lowercased.
-/// - Path separators normalized to forward slashes in the hash input.
+///
+/// The `ProjectId` is derived from the canonical absolute path as-is (native
+/// separators). It is intentionally machine-/platform-specific — the same repo
+/// on a different machine is a different project.
 pub fn resolve_project_id(input: &Path) -> Result<(ProjectId, PathBuf), CoreError> {
     // Canonicalize: resolves `..`, symlinks, normalizes separators.
     let canonical = std::fs::canonicalize(input).map_err(|e| {
@@ -150,5 +156,54 @@ mod tests {
         let (id1, _) = resolve_project_id(&dot_dot).unwrap();
         let (id2, _) = resolve_project_id(parent).unwrap();
         assert_eq!(id1, id2);
+    }
+
+    // ---- DESIGN §3.4 exit-criteria tests ----
+
+    #[test]
+    fn same_project_different_paths_resolve_same_id() {
+        // A directory reached directly and via `<dir>/sub/..` must map to one id.
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let indirect = sub.join(".."); // == dir.path() after canonicalize
+
+        let (id_direct, _) = resolve_project_id(dir.path()).unwrap();
+        let (id_indirect, _) = resolve_project_id(&indirect).unwrap();
+        assert_eq!(id_direct, id_indirect);
+    }
+
+    #[test]
+    fn symlinked_project_resolves_to_canonical() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real_project");
+        std::fs::create_dir(&target).unwrap();
+        let link = dir.path().join("link_project");
+
+        // Creating symlinks on Windows needs Developer Mode / admin; skip if denied.
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&target, &link).is_ok();
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_dir(&target, &link).is_ok();
+
+        if !made {
+            eprintln!("skipping symlink test: cannot create symlinks here");
+            return;
+        }
+
+        let (id_target, _) = resolve_project_id(&target).unwrap();
+        let (id_link, _) = resolve_project_id(&link).unwrap();
+        assert_eq!(id_target, id_link, "symlink must resolve to the canonical id");
+    }
+
+    #[test]
+    fn moved_project_gets_new_id_until_path_rebind() {
+        // Two distinct locations are two distinct projects. Re-binding a moved
+        // project to its old id is a future explicit `project rebind` operation.
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let (id_a, _) = resolve_project_id(a.path()).unwrap();
+        let (id_b, _) = resolve_project_id(b.path()).unwrap();
+        assert_ne!(id_a, id_b);
     }
 }
