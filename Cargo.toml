@@ -8,6 +8,7 @@ members = [
     "crates/mnemo-store",
     "crates/mnemo-graph",
     "crates/mnemo-git",
+    "crates/mnemo-resolve",
     "crates/mnemo-index",
     "crates/mnemo-mcp",
     "crates/mnemo-memory",
