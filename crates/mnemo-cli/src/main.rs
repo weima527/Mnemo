@@ -40,6 +40,16 @@ enum Command {
         #[command(subcommand)]
         query: QueryCommand,
     },
+    /// Manage the resident daemon.
+    Daemon {
+        #[command(subcommand)]
+        cmd: DaemonCmd,
+    },
+    /// Manage projects in the running daemon.
+    Project {
+        #[command(subcommand)]
+        cmd: ProjectCmd,
+    },
     /// Show version info.
     Version,
 }
@@ -80,7 +90,38 @@ enum QueryCommand {
     },
 }
 
-fn main() -> anyhow::Result<()> {
+#[derive(Subcommand)]
+enum DaemonCmd {
+    /// Run the daemon in the foreground (blocks until Ctrl-C or `daemon stop`).
+    Start {
+        /// Run in the foreground (the only supported mode for now).
+        #[arg(long)]
+        foreground: bool,
+    },
+    /// Show daemon status (active projects, uptime).
+    Status,
+    /// Ask the running daemon to shut down.
+    Stop,
+}
+
+#[derive(Subcommand)]
+enum ProjectCmd {
+    /// Attach (hydrate + cache) a project in the daemon.
+    Attach {
+        /// Path to the project.
+        path: PathBuf,
+    },
+    /// Detach a project (frees memory, keeps the DB).
+    Detach {
+        /// Path to the project.
+        path: PathBuf,
+    },
+    /// List the daemon's active projects.
+    List,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -130,11 +171,16 @@ fn main() -> anyhow::Result<()> {
             }
             if !result.errors.is_empty() {
                 for err in &result.errors {
-                    eprintln!("  Parse error at {}:{}: {}", err.line, err.column, err.message);
+                    eprintln!(
+                        "  Parse error at {}:{}: {}",
+                        err.line, err.column, err.message
+                    );
                 }
             }
         }
         Command::Query { query } => run_query(query)?,
+        Command::Daemon { cmd } => run_daemon(cmd).await?,
+        Command::Project { cmd } => run_project(cmd).await?,
         Command::Version => {
             println!("mnemo-cli {}", env!("CARGO_PKG_VERSION"));
         }
@@ -146,10 +192,18 @@ fn main() -> anyhow::Result<()> {
 fn run_query(query: QueryCommand) -> anyhow::Result<()> {
     match query {
         QueryCommand::Callers { name, repo_path } => {
-            print_relations(&name, &mnemo_index::query::callers(&repo_path, &name)?, "callers");
+            print_relations(
+                &name,
+                &mnemo_index::query::callers(&repo_path, &name)?,
+                "callers",
+            );
         }
         QueryCommand::Callees { name, repo_path } => {
-            print_relations(&name, &mnemo_index::query::callees(&repo_path, &name)?, "callees");
+            print_relations(
+                &name,
+                &mnemo_index::query::callees(&repo_path, &name)?,
+                "callees",
+            );
         }
         QueryCommand::Search { pattern, repo_path } => {
             let hits = mnemo_index::query::search(&repo_path, &pattern)?;
@@ -201,4 +255,90 @@ fn print_relations(name: &str, reports: &[mnemo_index::query::Relations], label:
             }
         }
     }
+}
+
+async fn run_daemon(cmd: DaemonCmd) -> anyhow::Result<()> {
+    let endpoint = mnemo_daemon::transport::default_endpoint();
+    match cmd {
+        DaemonCmd::Start { foreground } => {
+            if !foreground {
+                println!("detached mode is not supported yet; re-run with --foreground");
+                return Ok(());
+            }
+            println!("mnemo daemon listening on {endpoint} (Ctrl-C to stop)");
+            mnemo_daemon::run_default().await?;
+        }
+        DaemonCmd::Status => {
+            let status =
+                mnemo_daemon::client::call(&endpoint, "daemon.status", serde_json::json!({}))
+                    .await?;
+            println!(
+                "Active projects: {} / {}  (uptime {}s)",
+                status["active_projects"], status["max_active_projects"], status["uptime_secs"]
+            );
+            if let Some(projects) = status["projects"].as_array() {
+                for p in projects {
+                    println!(
+                        "  {}  {}  ({} symbols)",
+                        p["project_id"].as_str().unwrap_or(""),
+                        p["canonical_path"].as_str().unwrap_or(""),
+                        p["symbol_count"]
+                    );
+                }
+            }
+        }
+        DaemonCmd::Stop => {
+            mnemo_daemon::client::call(&endpoint, "daemon.shutdown", serde_json::json!({})).await?;
+            println!("daemon shutdown requested");
+        }
+    }
+    Ok(())
+}
+
+async fn run_project(cmd: ProjectCmd) -> anyhow::Result<()> {
+    let endpoint = mnemo_daemon::transport::default_endpoint();
+    match cmd {
+        ProjectCmd::Attach { path } => {
+            let info = mnemo_daemon::client::call(
+                &endpoint,
+                "project.attach",
+                serde_json::json!({ "path": path.to_string_lossy() }),
+            )
+            .await?;
+            println!(
+                "attached {} ({} symbols)",
+                info["project_id"].as_str().unwrap_or(""),
+                info["symbol_count"]
+            );
+        }
+        ProjectCmd::Detach { path } => {
+            let (id, _) = mnemo_store::paths::resolve_project_id(&path)?;
+            mnemo_daemon::client::call(
+                &endpoint,
+                "project.detach",
+                serde_json::json!({ "project_id": id.to_hex() }),
+            )
+            .await?;
+            println!("detached {id}");
+        }
+        ProjectCmd::List => {
+            let list = mnemo_daemon::client::call(&endpoint, "project.list", serde_json::json!({}))
+                .await?;
+            match list.as_array() {
+                Some(arr) if arr.is_empty() => println!("no active projects"),
+                Some(arr) => {
+                    for p in arr {
+                        println!(
+                            "{}  {}  ({} symbols)",
+                            p["project_id"].as_str().unwrap_or(""),
+                            p["canonical_path"].as_str().unwrap_or(""),
+                            p["symbol_count"]
+                        );
+                    }
+                }
+                None => {}
+            }
+        }
+    }
+    Ok(())
 }

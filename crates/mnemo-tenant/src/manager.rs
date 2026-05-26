@@ -133,6 +133,11 @@ impl TenantManager {
         self.projects.len()
     }
 
+    /// The configured maximum number of concurrently-active projects.
+    pub fn max_active_projects(&self) -> usize {
+        self.config.max_active_projects
+    }
+
     /// Summaries of all active projects.
     pub fn list_active(&self) -> Vec<ProjectSummary> {
         self.projects

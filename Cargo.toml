@@ -11,6 +11,7 @@ members = [
     "crates/mnemo-resolve",
     "crates/mnemo-index",
     "crates/mnemo-tenant",
+    "crates/mnemo-daemon",
     "crates/mnemo-mcp",
     "crates/mnemo-memory",
     "crates/mnemo-cli",
@@ -59,6 +60,8 @@ dashmap = "6"
 arc-swap = "1"
 lru = "0.12"
 parking_lot = "0.12"
+# Cross-platform local IPC (Unix domain socket / Windows named pipe)
+interprocess = { version = "2", features = ["tokio"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
