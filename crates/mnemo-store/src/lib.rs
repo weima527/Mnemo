@@ -9,6 +9,7 @@ use mnemo_core::CoreError;
 use rusqlite::Connection;
 use std::path::Path;
 
+pub mod dao;
 pub mod paths;
 pub mod registry;
 pub mod schema;
