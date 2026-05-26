@@ -12,6 +12,7 @@ members = [
     "crates/mnemo-mcp",
     "crates/mnemo-memory",
     "crates/mnemo-cli",
+    "tests/invariants",
 ]
 
 [workspace.dependencies]
@@ -48,6 +49,8 @@ clap = { version = "4", features = ["derive"] }
 walkdir = "2"
 # Home directory resolution
 dirs = "5"
+# Temp dirs for tests
+tempfile = "3"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
