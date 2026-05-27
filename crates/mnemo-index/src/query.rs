@@ -186,6 +186,8 @@ pub fn hydrate(conn: &Connection, snapshot: SnapshotId) -> Result<SymbolGraph, C
                 .cloned()
                 .unwrap_or_default(),
             start_line: s.start_line,
+            end_line: s.end_line,
+            byte_len: s.end_byte.saturating_sub(s.start_byte),
         })
         .collect::<Vec<_>>();
     let edges = edge_dao::at_snapshot(conn, snapshot)?;

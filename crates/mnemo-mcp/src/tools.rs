@@ -36,4 +36,13 @@ pub struct FindContextArgs {
     pub task: String,
     /// Absolute path to the (already indexed) repository.
     pub repo_path: String,
+    /// The file the user is currently editing (its symbols are boosted).
+    #[serde(default)]
+    pub current_file: Option<String>,
+    /// Repo-relative paths of changed files (their symbols are boosted).
+    #[serde(default)]
+    pub changed_files: Vec<String>,
+    /// Token budget for the returned Context Pack (defaults to 5000).
+    #[serde(default)]
+    pub token_budget: Option<u32>,
 }

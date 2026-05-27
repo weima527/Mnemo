@@ -60,8 +60,11 @@ impl Bridge {
         ok_json(&self.do_trace_symbol(params.0).await?)
     }
 
-    #[tool(description = "Find a minimal set of relevant symbols for a task. \
-                          MVP: keyword search over the indexed graph (no ranking yet).")]
+    #[tool(
+        description = "Find a minimal, ranked set of relevant symbols (a Context Pack) for a \
+                          task, within a token budget. Anchors on task keywords, expands to \
+                          callers/callees, and reflects unsaved edits via the overlay."
+    )]
     async fn find_context(
         &self,
         params: Parameters<FindContextArgs>,
@@ -111,36 +114,19 @@ impl Bridge {
         Ok(out)
     }
 
-    /// Basic context finder: union of keyword search hits over the task.
+    /// Build a ranked Context Pack via the daemon's planner.
     pub async fn do_find_context(&self, args: FindContextArgs) -> Result<Value, McpError> {
-        let mut seen = std::collections::BTreeSet::new();
-        let mut items: Vec<Value> = Vec::new();
-        for keyword in keywords(&args.task) {
-            let hits = self
-                .call(
-                    "query.search",
-                    json!({ "path": &args.repo_path, "query": keyword }),
-                )
-                .await?;
-            if let Some(arr) = hits.as_array() {
-                for hit in arr {
-                    let key = hit["qualified_name"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    if !key.is_empty() && seen.insert(key) {
-                        items.push(hit.clone());
-                    }
-                }
-            }
-        }
-        Ok(json!({
-            "task": args.task,
-            "summary": format!("{} candidate symbols matching task keywords", items.len()),
-            "items": items,
-            "note": "MVP: unranked keyword search over the indexed graph; \
-                     ranking + token budget land in M3.",
-        }))
+        self.call(
+            "context.find",
+            json!({
+                "path": args.repo_path,
+                "task": args.task,
+                "current_file": args.current_file,
+                "changed_files": args.changed_files,
+                "token_budget": args.token_budget,
+            }),
+        )
+        .await
     }
 }
 
@@ -164,17 +150,6 @@ fn ok_json(value: &Value) -> Result<CallToolResult, McpError> {
     let text = serde_json::to_string_pretty(value)
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
     Ok(CallToolResult::success(vec![Content::text(text)]))
-}
-
-/// Split a task string into identifier-ish keywords (length ≥ 3).
-fn keywords(task: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for word in task.split(|c: char| !c.is_alphanumeric() && c != '_') {
-        if word.len() >= 3 && !out.iter().any(|w| w == word) {
-            out.push(word.to_string());
-        }
-    }
-    out
 }
 
 /// Start the MCP bridge on stdio: ensure the daemon is up, then serve.

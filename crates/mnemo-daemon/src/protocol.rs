@@ -129,6 +129,22 @@ pub struct QueryParams {
     pub query: String,
 }
 
+/// Params for `context.find` (build a scored Context Pack for a task).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ContextFindParams {
+    pub path: String,
+    pub task: String,
+    /// The file the user is currently editing (boosts its symbols).
+    #[serde(default)]
+    pub current_file: Option<String>,
+    /// Repo-relative paths of changed files (boosts their symbols).
+    #[serde(default)]
+    pub changed_files: Vec<String>,
+    /// Token budget for the pack (defaults to 5000 when unset).
+    #[serde(default)]
+    pub token_budget: Option<u32>,
+}
+
 /// One changed working-tree file for `overlay.set`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OverlayFileArg {
