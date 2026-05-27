@@ -1,20 +1,27 @@
 [package]
-name = "mnemo-cli"
+name = "mnemo-daemon"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Local CLI for debugging and benchmarking the Mnemo intelligence layer"
+description = "Resident Mnemo daemon: cross-platform JSON-RPC IPC over the TenantManager"
+
+[[bin]]
+name = "mnemo-daemon"
+path = "src/main.rs"
 
 [dependencies]
 mnemo-core = { path = "../mnemo-core" }
-mnemo-index = { path = "../mnemo-index" }
-mnemo-parser = { path = "../mnemo-parser" }
 mnemo-store = { path = "../mnemo-store" }
+mnemo-index = { path = "../mnemo-index" }
 mnemo-graph = { path = "../mnemo-graph" }
-mnemo-daemon = { path = "../mnemo-daemon" }
-clap = { workspace = true }
+mnemo-tenant = { path = "../mnemo-tenant" }
+interprocess = { workspace = true }
 tokio = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

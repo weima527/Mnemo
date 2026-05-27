@@ -1,0 +1,21 @@
+[package]
+name = "mnemo-tenant"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Multi-project tenancy (TenantManager + ProjectContext) for the Mnemo daemon"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }
+mnemo-store = { path = "../mnemo-store" }
+mnemo-index = { path = "../mnemo-index" }
+mnemo-graph = { path = "../mnemo-graph" }
+dashmap = { workspace = true }
+arc-swap = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

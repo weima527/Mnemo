@@ -10,15 +10,18 @@
 
 use mnemo_core::{CoreError, SnapshotId, SymbolKind};
 use mnemo_graph::{GraphNode, SymbolGraph};
-use mnemo_store::dao::{edge as edge_dao, file as file_dao, snapshot as snapshot_dao, symbol as symbol_dao};
+use mnemo_store::dao::{
+    edge as edge_dao, file as file_dao, snapshot as snapshot_dao, symbol as symbol_dao,
+};
 use mnemo_store::open_database;
 use mnemo_store::paths::{project_db, resolve_project_id};
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
 /// A symbol rendered for query output.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolHit {
     /// In-file qualified name (e.g. `Point::manhattan`).
     pub qualified_name: String,
@@ -42,7 +45,7 @@ impl SymbolHit {
 }
 
 /// A matched symbol together with its related symbols (callers or callees).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relations {
     /// The symbol that matched the queried name.
     pub symbol: SymbolHit,
@@ -50,47 +53,79 @@ pub struct Relations {
     pub related: Vec<SymbolHit>,
 }
 
+// ---------------------------------------------------------------------------
+// Path-based queries (CLI): open the project DB, hydrate, then delegate to the
+// graph-based fns below. Return empty when the project was never indexed.
+// ---------------------------------------------------------------------------
+
 /// Symbols that call any symbol named `name`.
 pub fn callers(repo_path: &Path, name: &str) -> Result<Vec<Relations>, CoreError> {
-    let Some(graph) = open_graph(repo_path)? else {
-        return Ok(Vec::new());
-    };
-    Ok(relations(&graph, name, Direction::Callers))
+    Ok(match open_graph(repo_path)? {
+        Some(graph) => callers_in(&graph, name),
+        None => Vec::new(),
+    })
 }
 
 /// Symbols called by any symbol named `name`.
 pub fn callees(repo_path: &Path, name: &str) -> Result<Vec<Relations>, CoreError> {
-    let Some(graph) = open_graph(repo_path)? else {
-        return Ok(Vec::new());
-    };
-    Ok(relations(&graph, name, Direction::Callees))
+    Ok(match open_graph(repo_path)? {
+        Some(graph) => callees_in(&graph, name),
+        None => Vec::new(),
+    })
 }
 
 /// Symbols whose name or qualified name contains `pattern` (case-insensitive).
 pub fn search(repo_path: &Path, pattern: &str) -> Result<Vec<SymbolHit>, CoreError> {
-    let Some(graph) = open_graph(repo_path)? else {
-        return Ok(Vec::new());
-    };
+    Ok(match open_graph(repo_path)? {
+        Some(graph) => search_in(&graph, pattern),
+        None => Vec::new(),
+    })
+}
+
+/// Details for every symbol named `name`.
+pub fn symbol_info(repo_path: &Path, name: &str) -> Result<Vec<SymbolHit>, CoreError> {
+    Ok(match open_graph(repo_path)? {
+        Some(graph) => symbols_named(&graph, name),
+        None => Vec::new(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Graph-based queries: operate on an already-hydrated graph. The daemon (M2.2)
+// calls these on each project's cached `SymbolGraph`, avoiding a per-request DB
+// hydrate.
+// ---------------------------------------------------------------------------
+
+/// Callers of any symbol named `name`, within `graph`.
+pub fn callers_in(graph: &SymbolGraph, name: &str) -> Vec<Relations> {
+    relations(graph, name, Direction::Callers)
+}
+
+/// Callees of any symbol named `name`, within `graph`.
+pub fn callees_in(graph: &SymbolGraph, name: &str) -> Vec<Relations> {
+    relations(graph, name, Direction::Callees)
+}
+
+/// Symbols in `graph` whose name or qualified name contains `pattern`
+/// (case-insensitive), sorted by qualified name.
+pub fn search_in(graph: &SymbolGraph, pattern: &str) -> Vec<SymbolHit> {
     let mut hits: Vec<SymbolHit> = graph
         .nodes_matching(pattern)
         .into_iter()
         .map(SymbolHit::from_node)
         .collect();
     hits.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name));
-    Ok(hits)
+    hits
 }
 
-/// Details for every symbol named `name`.
-pub fn symbol_info(repo_path: &Path, name: &str) -> Result<Vec<SymbolHit>, CoreError> {
-    let Some(graph) = open_graph(repo_path)? else {
-        return Ok(Vec::new());
-    };
-    Ok(graph
+/// Details for every symbol named `name` in `graph`.
+pub fn symbols_named(graph: &SymbolGraph, name: &str) -> Vec<SymbolHit> {
+    graph
         .find_by_name(name)
         .iter()
         .filter_map(|&id| graph.node(id))
         .map(SymbolHit::from_node)
-        .collect())
+        .collect()
 }
 
 enum Direction {
@@ -133,7 +168,10 @@ fn open_graph(repo_path: &Path) -> Result<Option<SymbolGraph>, CoreError> {
 }
 
 /// Hydrate an in-memory [`SymbolGraph`] from the DB at `snapshot`.
-fn hydrate(conn: &Connection, snapshot: SnapshotId) -> Result<SymbolGraph, CoreError> {
+///
+/// Public so the daemon's tenant layer (M2.1) can build a `ProjectContext`'s
+/// graph cache from a connection it already holds.
+pub fn hydrate(conn: &Connection, snapshot: SnapshotId) -> Result<SymbolGraph, CoreError> {
     let file_paths: HashMap<_, _> = file_dao::paths(conn)?.into_iter().collect();
     let nodes = symbol_dao::at_snapshot(conn, snapshot)?
         .into_iter()
