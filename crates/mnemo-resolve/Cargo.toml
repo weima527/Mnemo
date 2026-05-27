@@ -1,0 +1,9 @@
+[package]
+name = "mnemo-resolve"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Same-file and project-wide reference resolution for Mnemo"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }

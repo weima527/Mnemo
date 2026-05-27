@@ -921,7 +921,6 @@ dependencies = [
 name = "mnemo-graph"
 version = "0.1.0"
 dependencies = [
- "blake3",
  "mnemo-core",
  "serde",
  "tracing",
@@ -936,7 +935,9 @@ dependencies = [
  "mnemo-git",
  "mnemo-graph",
  "mnemo-parser",
+ "mnemo-resolve",
  "mnemo-store",
+ "rusqlite",
  "tracing",
  "walkdir",
 ]
@@ -984,9 +985,18 @@ dependencies = [
 name = "mnemo-parser"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "mnemo-core",
  "tracing",
  "tree-sitter",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "mnemo-resolve"
+version = "0.1.0"
+dependencies = [
+ "mnemo-core",
 ]
 
 [[package]]
@@ -1383,6 +1393,7 @@ version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -1653,13 +1664,14 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.24.7"
+version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5387dffa7ffc7d2dae12b50c6f7aab8ff79d6210147c6613561fc3d474c6f75"
+checksum = "78f873475d258561b06f1c595d93308a7ed124d9977cb26b148c2084a4a3cc87"
 dependencies = [
  "cc",
  "regex",
  "regex-syntax",
+ "serde_json",
  "streaming-iterator",
  "tree-sitter-language",
 ]
@@ -1669,6 +1681,16 @@ name = "tree-sitter-language"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
 
 [[package]]
 name = "unicode-ident"
