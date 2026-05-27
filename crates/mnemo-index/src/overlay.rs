@@ -67,6 +67,8 @@ pub fn hydrate_with_overlay(
                 .cloned()
                 .unwrap_or_default(),
             start_line: s.start_line,
+            end_line: s.end_line,
+            byte_len: s.end_byte.saturating_sub(s.start_byte),
         });
     }
 
@@ -93,6 +95,11 @@ pub fn hydrate_with_overlay(
                 file_id,
                 file_path: file.rel_path.clone(),
                 start_line: raw.definition_range.start_line,
+                end_line: raw.definition_range.end_line,
+                byte_len: raw
+                    .definition_range
+                    .end_byte
+                    .saturating_sub(raw.definition_range.start_byte),
             });
         }
         overlay_raw.push((file_id, parsed.edges));

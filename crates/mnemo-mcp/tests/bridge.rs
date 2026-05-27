@@ -114,6 +114,9 @@ async fn bridge_forwards_to_daemon() {
         .do_find_context(FindContextArgs {
             task: "mul add".to_string(),
             repo_path: repo_str.clone(),
+            current_file: None,
+            changed_files: Vec::new(),
+            token_budget: None,
         })
         .await
         .unwrap();

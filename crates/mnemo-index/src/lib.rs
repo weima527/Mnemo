@@ -13,6 +13,7 @@
 //!
 //! This is the primary entrypoint for `index_repo`.
 
+pub mod context;
 pub mod overlay;
 pub mod query;
 

@@ -197,6 +197,25 @@ async fn dispatch(state: &DaemonState, method: &str, params: Value) -> Result<Va
             Ok(result)
         }
 
+        "context.find" => {
+            let p: protocol::ContextFindParams = parse(params)?;
+            let ctx = state
+                .manager
+                .get(Path::new(&p.path))
+                .await
+                .map_err(internal)?;
+            let graph = ctx.graph();
+            ctx.record_query();
+            let pack = mnemo_index::context::plan_context(
+                &graph,
+                &p.task,
+                p.current_file.as_deref(),
+                &p.changed_files,
+                p.token_budget.unwrap_or(5000),
+            );
+            Ok(to_value(pack))
+        }
+
         "overlay.set" => {
             let p: protocol::OverlaySetParams = parse(params)?;
             let ctx = state

@@ -26,6 +26,10 @@ pub struct GraphNode {
     pub file_path: String,
     /// 1-based start line of the definition.
     pub start_line: u32,
+    /// 1-based end line of the definition (inclusive).
+    pub end_line: u32,
+    /// Byte length of the definition's source (for token estimation).
+    pub byte_len: usize,
 }
 
 /// A flat adjacency view of the code graph at one snapshot.
@@ -69,6 +73,11 @@ impl SymbolGraph {
     /// Look up a node by identity.
     pub fn node(&self, id: SymbolIdentityId) -> Option<&GraphNode> {
         self.nodes.get(&id)
+    }
+
+    /// Iterate every node in the graph (unordered).
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &GraphNode> {
+        self.nodes.values()
     }
 
     /// Identities of every symbol with the given bare name.
@@ -152,6 +161,8 @@ mod tests {
             file_id: FileIdentityId::ZERO,
             file_path: "src/lib.rs".to_string(),
             start_line: 1,
+            end_line: 1,
+            byte_len: 0,
         }
     }
 

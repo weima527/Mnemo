@@ -217,3 +217,64 @@ async fn overlay_round_trip() {
     call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
 }
+
+#[tokio::test]
+async fn context_find_round_trip() {
+    let endpoint = unique_endpoint();
+    let manager = Arc::new(TenantManager::new(TenantConfig::default()));
+    let server = {
+        let endpoint = endpoint.clone();
+        tokio::spawn(async move { mnemo_daemon::run(&endpoint, manager).await })
+    };
+    let mut up = false;
+    for _ in 0..100 {
+        if call(&endpoint, "daemon.status", json!({})).await.is_ok() {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(up, "daemon did not start listening");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("proj");
+    copy_dir(&fixtures_root().join("basic_rust"), &repo);
+    let repo_str = repo.to_string_lossy().into_owned();
+
+    call(
+        &endpoint,
+        "project.index",
+        json!({ "path": repo_str, "force": false }),
+    )
+    .await
+    .unwrap();
+
+    let pack = call(
+        &endpoint,
+        "context.find",
+        json!({ "path": repo_str, "task": "square mul" }),
+    )
+    .await
+    .unwrap();
+
+    // Context Pack schema fields.
+    assert!(
+        pack["budget"]["requested"].as_u64().is_some(),
+        "budget present, got {pack}"
+    );
+    assert!(pack["summary"].as_str().is_some());
+    let items = pack["items"].as_array().expect("items array");
+    assert!(!items.is_empty(), "expected ranked items, got {pack}");
+    let top = &items[0];
+    assert!(top["score"].as_u64().is_some());
+    assert!(top["reason"].as_str().is_some());
+    assert!(top["range"]["start_line"].as_u64().is_some());
+
+    // `square` and `mul` (the task tokens) are among the candidates.
+    let names: Vec<&str> = items.iter().filter_map(|i| i["name"].as_str()).collect();
+    assert!(names.contains(&"square"), "square missing, got {names:?}");
+    assert!(names.contains(&"mul"), "mul missing, got {names:?}");
+
+    call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+}
