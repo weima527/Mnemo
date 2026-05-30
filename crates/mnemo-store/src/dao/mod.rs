@@ -17,3 +17,5 @@ pub mod file;
 pub mod meta;
 pub mod snapshot;
 pub mod symbol;
+pub mod telemetry;
+pub mod usefulness;

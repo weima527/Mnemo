@@ -4,7 +4,7 @@ use crate::protocol::{
     self, codes, DaemonStatus, IndexInfo, ProjectInfo, Request, Response, RpcError,
 };
 use crate::transport;
-use mnemo_core::{CoreError, ProjectId};
+use mnemo_core::{CoreError, ProjectId, SymbolIdentityId};
 use mnemo_tenant::{ProjectContext, TenantConfig, TenantManager};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -206,13 +206,75 @@ async fn dispatch(state: &DaemonState, method: &str, params: Value) -> Result<Va
                 .map_err(internal)?;
             let graph = ctx.graph();
             ctx.record_query();
+            let db_path = ctx.db_path().to_path_buf();
+
+            // 1. Load the usefulness signal (read-only).
+            let load_db = db_path.clone();
+            let usefulness = tokio::task::spawn_blocking(move || -> Result<_, CoreError> {
+                let conn = mnemo_store::open_database(&load_db)?;
+                mnemo_store::dao::usefulness::all(&conn)
+            })
+            .await
+            .expect("usefulness load task panicked")
+            .map_err(internal)?;
+
+            // 2. Plan the pack with usefulness-boosted ranking.
             let pack = mnemo_index::context::plan_context(
                 &graph,
                 &p.task,
                 p.current_file.as_deref(),
                 &p.changed_files,
                 p.token_budget.unwrap_or(5000),
+                &usefulness,
             );
+
+            // 3. Persist telemetry + bump usefulness for included items.
+            let included: Vec<(SymbolIdentityId, u32)> = pack
+                .items
+                .iter()
+                .filter_map(|item| {
+                    SymbolIdentityId::from_str(&item.identity_id)
+                        .ok()
+                        .map(|id| (id, item.score))
+                })
+                .collect();
+            let task = p.task.clone();
+            let estimated = pack.budget.estimated;
+            let item_count = pack.items.len();
+            tokio::task::spawn_blocking(move || -> Result<(), CoreError> {
+                let conn = mnemo_store::open_database(&db_path)?;
+                let summary = format!(
+                    r#"{{"items":{},"estimated":{},"task":{}}}"#,
+                    item_count,
+                    estimated,
+                    serde_json::to_string(&task).unwrap_or_else(|_| "\"\"".to_string()),
+                );
+                mnemo_store::dao::telemetry::append(
+                    &conn,
+                    mnemo_store::dao::telemetry::kind::CONTEXT_PACK_BUILT,
+                    &summary,
+                )?;
+                for (id, score) in &included {
+                    let _ = mnemo_store::dao::telemetry::append(
+                        &conn,
+                        mnemo_store::dao::telemetry::kind::SYMBOL_INCLUDED,
+                        &format!(r#"{{"identity_id":"{}","score":{}}}"#, id.to_hex(), score),
+                    );
+                    if let Err(e) = mnemo_store::dao::usefulness::bump_inclusion(&conn, *id, *score)
+                    {
+                        tracing::debug!(
+                            error = %e,
+                            identity = %id.to_hex(),
+                            "skipped usefulness bump (likely overlay-only symbol)"
+                        );
+                    }
+                }
+                Ok(())
+            })
+            .await
+            .expect("telemetry write task panicked")
+            .map_err(internal)?;
+
             Ok(to_value(pack))
         }
 

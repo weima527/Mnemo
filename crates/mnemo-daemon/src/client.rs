@@ -13,8 +13,11 @@ use std::time::Duration;
 
 static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Max attempts for a transient connection failure.
-const MAX_ATTEMPTS: usize = 5;
+/// Max attempts for a transient connection failure. Empirically 10 is enough
+/// to absorb the Windows named-pipe-listener-rearm race under heavy parallel
+/// test load even when the handler does multiple spawn_blocking hops (e.g.
+/// `context.find`, which reads usefulness then writes telemetry).
+const MAX_ATTEMPTS: usize = 10;
 
 /// A failed attempt: transient (worth retrying) vs fatal (return immediately).
 enum CallError {

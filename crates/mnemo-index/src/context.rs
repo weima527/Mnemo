@@ -8,6 +8,7 @@
 
 use mnemo_core::SymbolIdentityId;
 use mnemo_graph::SymbolGraph;
+use mnemo_store::dao::usefulness::Usefulness;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -17,6 +18,11 @@ const PROXIMITY_NUM: u32 = 2; // proximity = anchor * 2/5 = 0.4
 const PROXIMITY_DEN: u32 = 5;
 const BOOST_CURRENT_FILE: u32 = 250;
 const BOOST_CHANGED: u32 = 250;
+/// Per-inclusion usefulness bonus (capped by [`BOOST_USEFULNESS_MAX`]).
+/// Small enough to not dominate anchor / proximity; large enough to break ties.
+const BOOST_USEFULNESS_PER: u32 = 5;
+/// Maximum cumulative usefulness bonus a single candidate can receive.
+const BOOST_USEFULNESS_MAX: u32 = 100;
 const SCORE_MAX: u32 = 1000;
 const DEFAULT_TOKEN_BUDGET: u32 = 5000;
 const MIN_ITEM_TOKENS: u32 = 16;
@@ -84,12 +90,19 @@ fn keywords(task: &str) -> Vec<String> {
 }
 
 /// Plan a Context Pack for `task` over `graph`.
+///
+/// `usefulness` is the (typically small) map of materialised
+/// [`Usefulness`] rows from the per-project DB; symbols with prior inclusions
+/// receive a capped boost ([`BOOST_USEFULNESS_PER`] per inclusion, up to
+/// [`BOOST_USEFULNESS_MAX`]). Pass `&HashMap::new()` when no signal is
+/// available — the planner falls back to anchor/proximity/diff scoring only.
 pub fn plan_context(
     graph: &SymbolGraph,
     task: &str,
     current_file: Option<&str>,
     changed_files: &[String],
     token_budget: u32,
+    usefulness: &HashMap<SymbolIdentityId, Usefulness>,
 ) -> ContextPack {
     let budget = if token_budget == 0 {
         DEFAULT_TOKEN_BUDGET
@@ -144,12 +157,23 @@ pub fn plan_context(
         let base = anchor_score.max(proximity_score);
         let cur = current_file == Some(node.file_path.as_str());
         let chg = in_changed(&node.file_path);
-        let score =
-            (base + if cur { BOOST_CURRENT_FILE } else { 0 } + if chg { BOOST_CHANGED } else { 0 })
-                .min(SCORE_MAX);
-        if score == 0 {
+        // Gate on task-relevant signal only; usefulness alone never qualifies
+        // a candidate (we don't want previously-useful but unrelated symbols
+        // crowding the pack).
+        let relevance =
+            base + if cur { BOOST_CURRENT_FILE } else { 0 } + if chg { BOOST_CHANGED } else { 0 };
+        if relevance == 0 {
             continue;
         }
+        let useful_boost = usefulness
+            .get(&id)
+            .map(|u| {
+                u.times_included
+                    .saturating_mul(BOOST_USEFULNESS_PER)
+                    .min(BOOST_USEFULNESS_MAX)
+            })
+            .unwrap_or(0);
+        let score = (relevance + useful_boost).min(SCORE_MAX);
 
         let mut reasons: Vec<&str> = Vec::new();
         if anchor_score == SCORE_EXACT {
@@ -165,6 +189,9 @@ pub fn plan_context(
         }
         if chg {
             reasons.push("diff overlap");
+        }
+        if useful_boost > 0 {
+            reasons.push("previously useful");
         }
 
         let token_cost = ((node.byte_len / 4) as u32).max(MIN_ITEM_TOKENS);
@@ -276,7 +303,7 @@ mod tests {
 
     #[test]
     fn anchor_ranks_above_proximity() {
-        let pack = plan_context(&fixture(), "foo", None, &[], 5000);
+        let pack = plan_context(&fixture(), "foo", None, &[], 5000, &HashMap::new());
         assert_eq!(pack.items[0].name, "foo");
         assert_eq!(pack.items[0].score, SCORE_EXACT);
         // bar is a callee of foo → present, but lower.
@@ -289,7 +316,14 @@ mod tests {
 
     #[test]
     fn current_file_boosts_unrelated_symbol() {
-        let pack = plan_context(&fixture(), "foo", Some("src/b.rs"), &[], 5000);
+        let pack = plan_context(
+            &fixture(),
+            "foo",
+            Some("src/b.rs"),
+            &[],
+            5000,
+            &HashMap::new(),
+        );
         let baz = pack.items.iter().find(|i| i.name == "baz").unwrap();
         assert_eq!(baz.score, BOOST_CURRENT_FILE);
         assert!(baz.reason.contains("current file"));
@@ -298,10 +332,59 @@ mod tests {
     #[test]
     fn token_budget_omits_low_scorers() {
         // Budget fits only one item (each costs MIN_ITEM_TOKENS = 16).
-        let pack = plan_context(&fixture(), "foo", None, &[], 20);
+        let pack = plan_context(&fixture(), "foo", None, &[], 20, &HashMap::new());
         assert_eq!(pack.items.len(), 1);
         assert_eq!(pack.items[0].name, "foo");
         assert!(!pack.omitted.is_empty());
         assert!(pack.budget.estimated <= 20);
+    }
+
+    #[test]
+    fn usefulness_boost_is_capped_and_breaks_ties() {
+        // bar has anchor=0 but proximity (=400) from foo→bar; usefulness on
+        // bar should raise it but stay below the exact-match foo (=1000).
+        let mut useful: HashMap<SymbolIdentityId, Usefulness> = HashMap::new();
+        useful.insert(
+            id(2),
+            Usefulness {
+                times_included: 50, // 50*5=250 → clamped to BOOST_USEFULNESS_MAX=100
+                times_accepted: 0,
+                last_seen: 0,
+                avg_score: 800,
+            },
+        );
+        let pack = plan_context(&fixture(), "foo", None, &[], 5000, &useful);
+        let foo = pack.items.iter().find(|i| i.name == "foo").unwrap();
+        let bar = pack.items.iter().find(|i| i.name == "bar").unwrap();
+        // bar's relevance is base 400 (proximity from foo), boosted by exactly
+        // BOOST_USEFULNESS_MAX (capped from 250).
+        assert_eq!(bar.score, 400 + BOOST_USEFULNESS_MAX);
+        assert!(bar.reason.contains("previously useful"));
+        // foo stays unaffected (no usefulness row).
+        assert_eq!(foo.score, SCORE_EXACT);
+        // Anchor > anchor+boost: ordering preserved.
+        assert!(foo.score > bar.score);
+    }
+
+    #[test]
+    fn usefulness_alone_does_not_qualify_unrelated_symbol() {
+        // baz has 0 anchor, 0 proximity, not in current/changed — even with
+        // usefulness it should NOT show up.
+        let mut useful: HashMap<SymbolIdentityId, Usefulness> = HashMap::new();
+        useful.insert(
+            id(3),
+            Usefulness {
+                times_included: 100,
+                times_accepted: 100,
+                last_seen: 0,
+                avg_score: 1000,
+            },
+        );
+        let pack = plan_context(&fixture(), "foo", None, &[], 5000, &useful);
+        assert!(
+            pack.items.iter().all(|i| i.name != "baz"),
+            "baz should not appear without task relevance, items: {:?}",
+            pack.items.iter().map(|i| &i.name).collect::<Vec<_>>()
+        );
     }
 }
