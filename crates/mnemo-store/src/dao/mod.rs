@@ -14,6 +14,7 @@
 
 pub mod edge;
 pub mod file;
+pub mod gc;
 pub mod meta;
 pub mod snapshot;
 pub mod symbol;

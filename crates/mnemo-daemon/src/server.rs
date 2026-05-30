@@ -5,6 +5,7 @@ use crate::protocol::{
 };
 use crate::transport;
 use mnemo_core::{CoreError, ProjectId, SymbolIdentityId};
+use mnemo_store::dao::gc::GcPolicy;
 use mnemo_tenant::{ProjectContext, TenantConfig, TenantManager};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -30,6 +31,40 @@ pub async fn run(endpoint: &str, manager: Arc<TenantManager>) -> anyhow::Result<
         shutdown: Arc::new(Notify::new()),
     });
     tracing::info!(endpoint, "mnemo daemon listening");
+
+    // Background GC sweep — fires every `run_interval_hours` (default 6h),
+    // runs `ProjectContext::gc` on every currently-attached project. The
+    // timer never fires within test durations; tests exercise GC via the
+    // `gc.run` IPC method directly. The task is dropped when the daemon's
+    // tokio runtime tears down.
+    {
+        let manager_gc = Arc::clone(&state.manager);
+        tokio::spawn(async move {
+            let policy = GcPolicy::default();
+            let interval_secs = policy.run_interval_hours.max(1) * 3600;
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            tick.tick().await; // skip the immediate first tick
+            loop {
+                tick.tick().await;
+                for ctx in manager_gc.active_contexts() {
+                    match ctx.gc(policy).await {
+                        Ok(rep) if rep.freed_snapshots > 0 || rep.freed_versions > 0 => {
+                            tracing::info!(
+                                project = %ctx.project_id().to_hex(),
+                                freed_snapshots = rep.freed_snapshots,
+                                freed_versions = rep.freed_versions,
+                                db_size_before = rep.db_size_before,
+                                db_size_after = rep.db_size_after,
+                                "background GC pass complete",
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => tracing::warn!(error = %e, "background GC failed"),
+                    }
+                }
+            }
+        });
+    }
 
     loop {
         tokio::select! {
@@ -314,6 +349,17 @@ async fn dispatch(state: &DaemonState, method: &str, params: Value) -> Result<Va
                 .map_err(internal)?;
             ctx.clear_overlay();
             Ok(json!({ "ok": true }))
+        }
+
+        "gc.run" => {
+            let p: protocol::PathParams = parse(params)?;
+            let ctx = state
+                .manager
+                .get(Path::new(&p.path))
+                .await
+                .map_err(internal)?;
+            let report = ctx.gc(GcPolicy::default()).await.map_err(internal)?;
+            Ok(to_value(report))
         }
 
         other => Err(RpcError::new(

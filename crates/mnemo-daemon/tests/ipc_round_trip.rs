@@ -348,3 +348,53 @@ async fn context_find_feedback_loop() {
     call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
 }
+
+#[tokio::test]
+async fn gc_run_round_trip() {
+    let endpoint = unique_endpoint();
+    let manager = Arc::new(TenantManager::new(TenantConfig::default()));
+    let server = {
+        let endpoint = endpoint.clone();
+        tokio::spawn(async move { mnemo_daemon::run(&endpoint, manager).await })
+    };
+    let mut up = false;
+    for _ in 0..100 {
+        if call(&endpoint, "daemon.status", json!({})).await.is_ok() {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(up, "daemon did not start listening");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("proj");
+    copy_dir(&fixtures_root().join("basic_rust"), &repo);
+    let repo_str = repo.to_string_lossy().into_owned();
+
+    call(
+        &endpoint,
+        "project.index",
+        json!({ "path": repo_str, "force": false }),
+    )
+    .await
+    .unwrap();
+
+    // gc.run on a freshly indexed project: the snapshot is a 'filehash' kind,
+    // so no anonymous victims → freed counts are zero, but the schema is
+    // populated.
+    let report = call(&endpoint, "gc.run", json!({ "path": repo_str }))
+        .await
+        .unwrap();
+    assert_eq!(report["freed_snapshots"], 0);
+    assert_eq!(report["freed_versions"], 0);
+    assert!(report["db_size_before"].as_u64().is_some(), "got {report}");
+    assert!(report["db_size_after"].as_u64().is_some(), "got {report}");
+    assert!(
+        report["db_size_before"].as_u64().unwrap() > 0,
+        "index db should be non-empty after project.index, got {report}"
+    );
+
+    call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+}

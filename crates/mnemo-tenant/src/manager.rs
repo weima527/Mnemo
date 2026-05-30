@@ -138,6 +138,17 @@ impl TenantManager {
         self.config.max_active_projects
     }
 
+    /// Snapshots of every currently-cached `ProjectContext` (cloned `Arc`s).
+    /// Unlike [`Self::list_active`] this returns the contexts themselves —
+    /// useful for background sweeps (e.g. GC) that need to call methods on
+    /// every active project without bumping LRU recency.
+    pub fn active_contexts(&self) -> Vec<Arc<ProjectContext>> {
+        self.projects
+            .iter()
+            .map(|entry| Arc::clone(entry.value()))
+            .collect()
+    }
+
     /// Summaries of all active projects.
     pub fn list_active(&self) -> Vec<ProjectSummary> {
         self.projects
