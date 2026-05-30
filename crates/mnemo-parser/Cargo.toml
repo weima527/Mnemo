@@ -9,5 +9,6 @@ description = "Tree-sitter adapters and symbol extraction for Mnemo"
 mnemo-core = { path = "../mnemo-core" }
 tree-sitter = { workspace = true }
 tree-sitter-rust = { workspace = true }
+tree-sitter-typescript = { workspace = true }
 blake3 = { workspace = true }
 tracing = { workspace = true }

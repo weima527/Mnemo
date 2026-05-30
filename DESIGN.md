@@ -208,7 +208,8 @@ CREATE TABLE IF NOT EXISTS context_pack_item (
 
 CREATE TABLE IF NOT EXISTS memory_fact (
     id          TEXT PRIMARY KEY,
-    kind        TEXT NOT NULL,                  -- 'project_constitution' | 'user_preference' | 'outcome'
+    kind        TEXT NOT NULL,                  -- 见 §2.6：'constitution' | 'preference' | 'outcome' | 'skill'
+                                                --（'session' 是 Working memory，纯内存，不入此表）
     promotion   TEXT NOT NULL DEFAULT 'raw',    -- 'raw' | 'candidate' | 'confirmed' | 'constitution'
     body        TEXT NOT NULL,                  -- 结构化 JSON
     confidence  INTEGER NOT NULL,               -- 0-100
@@ -285,6 +286,32 @@ conn.pragma_update(None, "temp_store", "MEMORY")?;
 conn.pragma_update(None, "busy_timeout", 5000)?;     // 5s 写锁等待
 conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;  // GC 用得上
 ```
+
+---
+
+### 2.6 Memory taxonomy（认知科学分类 + mnemo 实例化）
+
+> 这是 v1.0 才物化的层。**这里固定分类法**，落地时按这个 schema 写，避免 Tulving (1972) 之外再发明术语。enum 形状先锁死，schema 可后续微调。
+
+**为什么用 Tulving 的 4 类**：LangChain / Letta / Mem0 等通用 LLM agent memory 框架已经广泛采用 Episodic / Semantic / Procedural / Working 的分组术语。mnemo 作为 agent-agnostic 工具，沿用同一套词汇可以**降低上层 agent 开发者的集成与教育成本**——他们不需要学一套 mnemo 私有的 memory 分类。
+
+**mnemo 的 5 个 `MemoryKind` 变体，按 Tulving 分组**：
+
+| Tulving 类 | mnemo Kind | 内容 | 物理形态 | 写入特征 |
+|---|---|---|---|---|
+| Semantic | `Constitution` | 仓库稳定事实（build 命令、架构边界、不变量） | `memory_fact` 表，`kind='constitution'` | 写极少；人工或人工确认后写入 |
+| Semantic | `Preference` | 开发者/团队偏好（解释深度、review 风格、禁用模式） | `memory_fact` 表，`kind='preference'`；可跨项目 | 写少；跨项目可放全局 |
+| Episodic | `Outcome` | 带时间戳事件（useful pack / test fail / user reject） | `memory_fact` 表，`kind='outcome'`；rolling cleanup | append-mostly；跟 `telemetry_event` 同节奏 |
+| Procedural | `Skill` | how-to 流程（"添加新 extractor 的步骤"、"resolve 模糊符号策略"） | `memory_fact` 表，`kind='skill'`，`body.version` 字段；copy-on-write | 写少；版本化，可回滚 |
+| Working | `Session` | 当前 session 上下文（recent touched 文件、最近 query、活跃任务） | **纯内存** `ArcSwapOption<SessionMemory>` per `ProjectContext`；session 结束即丢 | 高频读写；**绝不持久化** |
+
+**铁律**：
+
+1. 4 类 Tulving 中前 3 类（Semantic / Episodic / Procedural，共 4 个变体）**共享同一张 `memory_fact` 表**，靠 `kind` 列区分。SQLite 在 mnemo 的量级（每项目 10²–10⁴ 条 fact）足以支撑所有 workload，无须引入第二个存储引擎。
+2. Working / `Session` **永远不落盘**，跟 `WorkingTreeOverlay`（§6.3）同一物理模式：`ArcSwapOption` slot，session 结束即释放。
+3. 共享 promotion pipeline：`raw → candidate → confirmed → constitution`（详见 `mnemo-memory::PromotionState`）。
+4. 外部接口（MCP tool / Context Pack）只引用 `SymbolIdentityId` / `FileIdentityId`，**不引用 memory_fact 内部 id**。
+5. Memory 物化是 v1.0 目标（§11）；M0–M3 阶段 `mnemo-memory` 保持 stub，**enum 形状先锁死**，避免后续破坏性 schema 改动。
 
 ---
 
@@ -1108,7 +1135,7 @@ Golden 文件存在 repo 里，CI 必须过。要更新先跑 `cargo test -- --i
 ### 之后（v1.0）
 
 - 第三、四种语言
-- Project constitution memory（结构化 YAML）
+- Memory layer 物化（按 §2.6 的 5-variant `MemoryKind`：Constitution / Preference / Outcome / Skill / Session；前 4 入 `memory_fact`，Session 纯内存）
 - Cost-based context pack planner（Cascades 思路）
 - 跨 project 查询（如果有需求）
 

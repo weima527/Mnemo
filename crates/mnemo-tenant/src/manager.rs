@@ -1,6 +1,7 @@
 //! The multi-project manager: attach / get / detach with LRU eviction.
 
 use crate::context::ProjectContext;
+use crate::watcher::OverlayWatcher;
 use dashmap::DashMap;
 use lru::LruCache;
 use mnemo_core::{CoreError, ProjectId};
@@ -46,6 +47,12 @@ pub struct ProjectSummary {
 /// (DESIGN §4.4). `detach` additionally marks the registry row `archived`.
 pub struct TenantManager {
     projects: DashMap<ProjectId, Arc<ProjectContext>>,
+    /// Per-project working-tree watcher. Lifetime mirrors `projects`:
+    /// inserted on attach, removed on detach / eviction. Dropping a
+    /// `OverlayWatcher` stops its platform thread + aborts its forwarder
+    /// task. Held separately from `ProjectContext` so the watcher can call
+    /// `set_overlay` on the cached Arc without a circular reference.
+    watchers: DashMap<ProjectId, OverlayWatcher>,
     /// Recency tracking only; the contexts live in `projects`.
     lru: Mutex<LruCache<ProjectId, ()>>,
     config: TenantConfig,
@@ -59,6 +66,7 @@ impl TenantManager {
             .expect("max(1) is always non-zero");
         Self {
             projects: DashMap::new(),
+            watchers: DashMap::new(),
             lru: Mutex::new(LruCache::new(cap)),
             config,
         }
@@ -98,10 +106,27 @@ impl TenantManager {
         };
         if let Some(evicted_id) = evicted {
             // Drop the cached Arc → memory freed once all holders release.
-            // The DB file and registry row are untouched.
+            // The DB file and registry row are untouched. Also stop the
+            // evicted project's working-tree watcher (if any).
             self.projects.remove(&evicted_id);
+            self.watchers.remove(&evicted_id);
         }
         self.projects.insert(project_id, Arc::clone(&ctx));
+
+        // Spawn the working-tree watcher (overlay auto-refresh on save).
+        // Failures are non-fatal — the project still attaches, just without
+        // live editing. The user can still invoke `overlay.set` over IPC.
+        match OverlayWatcher::start(Arc::clone(&ctx)) {
+            Ok(w) => {
+                self.watchers.insert(project_id, w);
+            }
+            Err(e) => tracing::warn!(
+                error = %e,
+                project = %project_id.to_hex(),
+                "could not start working-tree watcher; overlay will not auto-update",
+            ),
+        }
+
         Ok(ctx)
     }
 
@@ -114,6 +139,7 @@ impl TenantManager {
     /// `archived`. The DB file is preserved.
     pub async fn detach(&self, project_id: ProjectId) -> Result<(), CoreError> {
         self.projects.remove(&project_id);
+        self.watchers.remove(&project_id);
         self.lru.lock().pop(&project_id);
         tokio::task::spawn_blocking(move || -> Result<(), CoreError> {
             let registry = open_registry()?;
@@ -136,6 +162,17 @@ impl TenantManager {
     /// The configured maximum number of concurrently-active projects.
     pub fn max_active_projects(&self) -> usize {
         self.config.max_active_projects
+    }
+
+    /// Snapshots of every currently-cached `ProjectContext` (cloned `Arc`s).
+    /// Unlike [`Self::list_active`] this returns the contexts themselves —
+    /// useful for background sweeps (e.g. GC) that need to call methods on
+    /// every active project without bumping LRU recency.
+    pub fn active_contexts(&self) -> Vec<Arc<ProjectContext>> {
+        self.projects
+            .iter()
+            .map(|entry| Arc::clone(entry.value()))
+            .collect()
     }
 
     /// Summaries of all active projects.

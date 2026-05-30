@@ -6,9 +6,12 @@
 //! works one file at a time and has no project context, so identity/version
 //! IDs and cross-file resolution are left to the index pipeline.
 //!
-//! Initial MVP target: Rust (via `tree-sitter-rust`).
+//! Supported languages: Rust (via `tree-sitter-rust`) and TypeScript /
+//! JavaScript (via `tree-sitter-typescript`, with TSX grammar for `.tsx` /
+//! `.jsx` files).
 
 mod rust;
+mod typescript;
 
 use mnemo_core::{FileIdentityId, Language, RawEdge, RawSymbol};
 use std::path::Path;
@@ -52,7 +55,10 @@ pub fn parse_file(file_id: FileIdentityId, path: &Path, source: &str) -> ParseRe
 
     match language {
         Some(Language::Rust) => rust::extract(file_id, source),
-        Some(Language::TypeScript) => parse_typescript(file_id, source),
+        Some(Language::TypeScript) => {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("ts");
+            typescript::extract(file_id, source, ext)
+        }
         None => ParseResult {
             file_id,
             language: Language::Rust, // placeholder
@@ -64,21 +70,6 @@ pub fn parse_file(file_id: FileIdentityId, path: &Path, source: &str) -> ParseRe
                 column: 1,
             }],
         },
-    }
-}
-
-/// Stub: parse TypeScript source code via tree-sitter.
-///
-/// TODO(M3): integrate `tree-sitter-typescript` to validate the language
-/// extractor abstraction.
-fn parse_typescript(file_id: FileIdentityId, _source: &str) -> ParseResult {
-    tracing::debug!(%file_id, "parse_typescript: not yet implemented");
-    ParseResult {
-        file_id,
-        language: Language::TypeScript,
-        symbols: Vec::new(),
-        edges: Vec::new(),
-        errors: Vec::new(),
     }
 }
 
@@ -118,5 +109,33 @@ mod tests {
         assert_eq!(result.language, Language::Rust);
         assert_eq!(result.symbols.len(), 1);
         assert_eq!(result.symbols[0].name, "answer");
+    }
+
+    #[test]
+    fn parse_typescript_file_extracts_symbols() {
+        let result = parse_file(
+            FileIdentityId::ZERO,
+            Path::new("util.ts"),
+            "export function answer(): number { return 42; }\n",
+        );
+        assert_eq!(result.language, Language::TypeScript);
+        assert!(
+            result.symbols.iter().any(|s| s.name == "answer"),
+            "expected `answer`, got {:?}",
+            result.symbols
+        );
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn parse_tsx_file_uses_tsx_grammar() {
+        let result = parse_file(
+            FileIdentityId::ZERO,
+            Path::new("Btn.tsx"),
+            "export function Btn() { return <button>ok</button>; }\n",
+        );
+        assert_eq!(result.language, Language::TypeScript);
+        assert!(result.symbols.iter().any(|s| s.name == "Btn"));
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
     }
 }

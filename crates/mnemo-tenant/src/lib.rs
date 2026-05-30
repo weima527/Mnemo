@@ -15,6 +15,8 @@
 
 mod context;
 mod manager;
+mod watcher;
 
 pub use context::{ProjectContext, Stats};
 pub use manager::{ProjectSummary, TenantConfig, TenantManager};
+pub use watcher::OverlayWatcher;

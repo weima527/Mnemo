@@ -14,6 +14,7 @@ use arc_swap::{ArcSwap, ArcSwapOption};
 use mnemo_core::{CoreError, ProjectId};
 use mnemo_graph::SymbolGraph;
 use mnemo_index::overlay::{hydrate_with_overlay, OverlayFile};
+use mnemo_store::dao::gc::{self as gc_dao, GcPolicy, GcReport};
 use mnemo_store::dao::snapshot as snapshot_dao;
 use mnemo_store::open_database;
 use mnemo_store::paths::{ensure_home_layout, project_db, resolve_project_id};
@@ -178,6 +179,19 @@ impl ProjectContext {
         })
         .await
         .expect("tenant overlay task panicked")
+    }
+
+    /// Run a single GC pass against this project's DB (DESIGN §8.3, MVP
+    /// simplification): clean up old anonymous / working_tree snapshots.
+    /// Commit / manual / filehash snapshots are never touched.
+    pub async fn gc(&self, policy: GcPolicy) -> Result<GcReport, CoreError> {
+        let db_path = self.db_path.clone();
+        tokio::task::spawn_blocking(move || -> Result<GcReport, CoreError> {
+            let mut conn = open_database(&db_path)?;
+            gc_dao::run(&mut conn, &policy)
+        })
+        .await
+        .expect("tenant gc task panicked")
     }
 
     /// Re-load the base graph from the DB at the latest snapshot, and rebuild the

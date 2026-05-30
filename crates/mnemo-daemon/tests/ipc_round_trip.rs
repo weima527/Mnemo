@@ -278,3 +278,123 @@ async fn context_find_round_trip() {
     call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
 }
+
+#[tokio::test]
+async fn context_find_feedback_loop() {
+    let endpoint = unique_endpoint();
+    let manager = Arc::new(TenantManager::new(TenantConfig::default()));
+    let server = {
+        let endpoint = endpoint.clone();
+        tokio::spawn(async move { mnemo_daemon::run(&endpoint, manager).await })
+    };
+    let mut up = false;
+    for _ in 0..100 {
+        if call(&endpoint, "daemon.status", json!({})).await.is_ok() {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(up, "daemon did not start listening");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("proj");
+    copy_dir(&fixtures_root().join("basic_rust"), &repo);
+    let repo_str = repo.to_string_lossy().into_owned();
+
+    call(
+        &endpoint,
+        "project.index",
+        json!({ "path": repo_str, "force": false }),
+    )
+    .await
+    .unwrap();
+
+    // Round 1: seed usefulness for items the planner included.
+    let pack1 = call(
+        &endpoint,
+        "context.find",
+        json!({ "path": repo_str, "task": "square" }),
+    )
+    .await
+    .unwrap();
+    let items1 = pack1["items"].as_array().expect("items array");
+    assert!(!items1.is_empty(), "round 1 should include at least square");
+    assert!(
+        items1.iter().all(|i| !i["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("previously useful")),
+        "round 1 should not yet have a usefulness signal, got {pack1}"
+    );
+
+    // Round 2: same task → at least one item picks up the persisted boost.
+    let pack2 = call(
+        &endpoint,
+        "context.find",
+        json!({ "path": repo_str, "task": "square" }),
+    )
+    .await
+    .unwrap();
+    let items2 = pack2["items"].as_array().expect("items array");
+    assert!(
+        items2.iter().any(|i| i["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("previously useful")),
+        "round 2 should mark a previously-useful item, got {pack2}"
+    );
+
+    call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+}
+
+#[tokio::test]
+async fn gc_run_round_trip() {
+    let endpoint = unique_endpoint();
+    let manager = Arc::new(TenantManager::new(TenantConfig::default()));
+    let server = {
+        let endpoint = endpoint.clone();
+        tokio::spawn(async move { mnemo_daemon::run(&endpoint, manager).await })
+    };
+    let mut up = false;
+    for _ in 0..100 {
+        if call(&endpoint, "daemon.status", json!({})).await.is_ok() {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(up, "daemon did not start listening");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("proj");
+    copy_dir(&fixtures_root().join("basic_rust"), &repo);
+    let repo_str = repo.to_string_lossy().into_owned();
+
+    call(
+        &endpoint,
+        "project.index",
+        json!({ "path": repo_str, "force": false }),
+    )
+    .await
+    .unwrap();
+
+    // gc.run on a freshly indexed project: the snapshot is a 'filehash' kind,
+    // so no anonymous victims → freed counts are zero, but the schema is
+    // populated.
+    let report = call(&endpoint, "gc.run", json!({ "path": repo_str }))
+        .await
+        .unwrap();
+    assert_eq!(report["freed_snapshots"], 0);
+    assert_eq!(report["freed_versions"], 0);
+    assert!(report["db_size_before"].as_u64().is_some(), "got {report}");
+    assert!(report["db_size_after"].as_u64().is_some(), "got {report}");
+    assert!(
+        report["db_size_before"].as_u64().unwrap() > 0,
+        "index db should be non-empty after project.index, got {report}"
+    );
+
+    call(&endpoint, "daemon.shutdown", json!({})).await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+}

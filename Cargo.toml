@@ -32,9 +32,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Embedded SQLite
 rusqlite = { version = "0.32", features = ["bundled"] }
-# Tree-sitter (runtime 0.25 matches the ABI-15 grammar below)
+# Tree-sitter (runtime 0.25 matches the ABI-15 grammars below)
 tree-sitter = "0.25"
 tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
 # Git bindings
 git2 = "0.19"
 # UUID generation
@@ -64,6 +65,9 @@ lru = "0.12"
 parking_lot = "0.12"
 # Cross-platform local IPC (Unix domain socket / Windows named pipe)
 interprocess = { version = "2", features = ["tokio"] }
+# Cross-platform filesystem watcher (inotify / FSEvents / ReadDirectoryChangesW)
+notify = "6"
+notify-debouncer-mini = "0.4"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

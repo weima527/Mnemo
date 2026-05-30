@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy this into your Claude Code MCP config and replace REPLACE_WITH_ABSOLUTE_PATH with the actual path printed by scripts/install.{ps1,sh}. On Windows escape backslashes (e.g. C:\\\\Users\\\\you\\\\mneon\\\\target\\\\release\\\\mnemo-mcp.exe).",
+  "mcpServers": {
+    "mnemo": {
+      "command": "REPLACE_WITH_ABSOLUTE_PATH_TO_mnemo-mcp"
+    }
+  }
+}
