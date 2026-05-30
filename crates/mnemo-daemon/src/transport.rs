@@ -20,9 +20,19 @@ use interprocess::local_socket::{GenericNamespaced, ToNsName};
 /// The duplex byte stream type (impls tokio `AsyncRead + AsyncWrite`).
 pub type Stream = IpcStream;
 
-/// The production endpoint: a named pipe key on Windows, the `daemon.sock` path
-/// on Unix.
+/// The production endpoint: respects `MNEMO_ENDPOINT` for isolation (tests,
+/// multi-instance setups), else a named pipe key on Windows or the
+/// `daemon.sock` path on Unix.
+///
+/// Daemon and bridge both call this at startup, so a single env var
+/// propagated via process inheritance lets the bridge auto-spawn a daemon
+/// on the same endpoint without further plumbing.
 pub fn default_endpoint() -> String {
+    if let Ok(custom) = std::env::var("MNEMO_ENDPOINT") {
+        if !custom.is_empty() {
+            return custom;
+        }
+    }
     #[cfg(windows)]
     {
         "mnemo-daemon".to_string()
